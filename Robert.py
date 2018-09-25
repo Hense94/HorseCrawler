@@ -6,9 +6,10 @@ from socket import timeout
 
 
 class Robert:
-    def __init__(self, name, url, horseDB):
+    def __init__(self, name, url, db, debugService):
+        self.debugService = debugService
         self.name = name
-        self.db = horseDB
+        self.db = db
 
         self.disallowedPaths = []
         self.domain = ''
@@ -19,7 +20,8 @@ class Robert:
 
     def __getDomain(self, url):
         parsedUrl = urlparse(url)
-        self.domain = '{}://{}/'.format(parsedUrl.scheme, parsedUrl.netloc)
+        # self.domain = '{}://{}/'.format(parsedUrl.scheme, parsedUrl.netloc)
+        self.domain = 'http://{}/'.format(parsedUrl.netloc)
 
     def __getRobotsString(self):
         url = '{}robots.txt'.format(self.domain)
@@ -30,25 +32,22 @@ class Robert:
             request = urllib.request.Request(url)
             try:
                 file = urllib.request.urlopen(request, timeout=1)
-                print('[ROBR] {} was read'.format(url))
+                self.debugService.add('ROBERT', '{} was read'.format(url))
                 self.robotString = file.read().decode('utf-8')
-            except HTTPError as e:
-                print('[ERRO] The server couldn\'t fulfill the request for {}.'.format(url))
-                print('[ERRO] Error code: ', e.code)
-                if e.code == 403:
-                    self.disallowedPaths.append('/')
-            except URLError as e:
-                print('[ERRO] We failed to reach a server for request {}.'.format(url))
-                print('[ERRO] Reason: ', e.reason)
-            except timeout as e:
-                e.reason = "timeout"
-                print('[ERRO] It took too long to reach {}.'.format(url))
-                print('[ERRO] Reason: ', e.reason)
-            if len(self.disallowedPaths) == 0:
                 self.__retrieveDisallowedPaths()
 
-            self.db.updateRobertRecord(url, self.disallowedPaths)
+            except HTTPError as e:
+                if e.code == 403:
+                    self.disallowedPaths.append('/')
+                    self.debugService.add('INFO', 'Not allowed to access {} '.format(url))
+                else:
+                    self.debugService.add('ERROR', 'Server couldn\'t fulfill the request for {} (code {})'.format(url, e.code))
+            except URLError as e:
+                self.debugService.add('ERROR', 'Failed to reach {} (reason: {})'.format(url, e.reason))
+            except timeout:
+                self.debugService.add('ERROR', 'Failed to reach {} (reason: timeout)'.format(url))
 
+            self.db.updateRobertRecord(url, self.disallowedPaths)
                 
 
     def __retrieveDisallowedPaths (self):
