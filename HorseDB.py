@@ -145,12 +145,40 @@ class HorseDB:
         self.dbconn.commit()
 
     def popQueue(self):
+        hostRestitutionTimeInSeconds= 1
+        now = time.time()
         c = self.dbconn.cursor()
 
         # !!! TODO: WARNING: STRANGER DANGER: pythonDB API will not make these two SQL queries into one transaction !!!
-        c.execute("SELECT * FROM q ORDER BY id ASC LIMIT 1;")
+        c.execute('''
+            SELECT * FROM q 
+            JOIN hosts AS h 
+                ON q.host_id = h.id 
+            WHERE h.last_visited < ? 
+            ORDER BY id 
+            ASC LIMIT 1;''', ((now - hostRestitutionTimeInSeconds),)
+        )
         row = c.fetchone()
+        if(row is None):
+            print("[WARN] We visited everything recently... Lets just visit something again and not care about being so fucking polite")
+            c.execute('''SELECT * FROM q ORDER BY id ASC LIMIT 1;''')
+            row = c.fetchone()
         c.execute("DELETE FROM q WHERE id = ?", (row[0],))
         # !!! TODO: WARNING: STRANGER DANGER: pythonDB API will not make these two SQL queries into one transaction !!!
 
+        return row[2]
         
+    def qSize(self):
+        c = self.dbconn.cursor()
+        c.execute("SELECT COUNT(*) FROM q;")
+        return c.fetchone()[0]
+
+    def enqueue(self, url):
+        host = self.getHost(url)
+        hostid = host[0]
+
+        c = self.dbconn.cursor()
+        c.execute("INSERT INTO q (url, host_id) VALUES (?, ?)", (url, hostid))
+        self.dbconn.commit()
+
+

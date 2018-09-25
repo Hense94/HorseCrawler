@@ -6,9 +6,7 @@ class HorseQueue:
         self.db = horsedb
 
     def empty(self):
-        c = self.dbconn.cursor()
-        c.execute("SELECT COUNT(*) FROM q;")
-        return c.fetchone()[0] == 0        
+        return self.db.qSize() == 0     
 
     def get(self):
         result = self.db.popQueue()
@@ -16,8 +14,4 @@ class HorseQueue:
         return result
 
     def put(self, url):
-        host = self.db.getHost(getHost)
-
-        c = self.dbconn.cursor()
-        c.execute("INSERT INTO q (url) VALUES (?)", (url,))
-        self.dbconn.commit()
+        self.db.enqueue(url)

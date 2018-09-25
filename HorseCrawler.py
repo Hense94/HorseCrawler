@@ -13,7 +13,7 @@ from HorseQueue import HorseQueue
 class HorseCrawler:
     def __init__(self, seedUrls):
         self.db = HorseDB()
-        self.q = HorseQueue(self.db.dbconn)
+        self.q = HorseQueue(self.db)
         for url in seedUrls:
             self.addToQueue(url)
 

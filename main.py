@@ -6,10 +6,10 @@ seed = ['https://antonchristensen.net']
 
 crawler = HorseCrawler(seed)
 
-nPages = 1000
+nPages = 100
 while True:
     crawler.crawlSingle()
     nPages = nPages-1
     if(nPages < 0):
-        input("Press Enter to go further")
+    	input("Press Enter to go further")
 
