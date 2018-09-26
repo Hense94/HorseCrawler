@@ -23,7 +23,6 @@ class HorseCrawler:
 
         self.horse_db = HorseDB(debugService)
         self.queue = HorseQueue(self.horse_db, debugService)
-        print ("JKLJKSLADJAKLD")
         for url in seedUrls:
             self.addToQueue(url)
 
@@ -37,12 +36,7 @@ class HorseCrawler:
         """ """
         return bool(re.search(r'\.(pdf|jpg|jpeg|gif|png)$', url))
 
-    def shouldCrawl(self, url):  # TODO: Implement more
-        # Are we allowed?
-        r = Robert('HorseBot', url, self.horse_db, self.debugService)
-        if not r.canAccessPath(url):
-            return False
-
+    def shouldAddToQueue(self, url):  # TODO: Implement more
         # Is it a resource
         if self.is_resource_url(url):
             self.debugService.add('INFO', '{} is probably some stupid format which we shouldn\'t read'.format(url))
@@ -84,6 +78,11 @@ class HorseCrawler:
     def retrievePage(self, url):
         request = urllib.request.Request(url)
 
+        # Are we allowed?
+        r = Robert('HorseBot', url, self.horse_db, self.debugService)
+        if not r.canAccessPath(url):
+            return None
+
         try:
             file = urllib.request.urlopen(request, timeout=1)
         except HTTPError as e:
@@ -95,6 +94,9 @@ class HorseCrawler:
         except timeout:
             self.debugService.add('ERROR', 'Failed to reach {} (reason: timeout)'.format(url))
             return None
+        except UnicodeEncodeError:
+            self.debugService.add('ERROR', 'Failed to read {} (reason: encoding error)'.format(url))
+            return None
         else:
             return file
 
@@ -105,17 +107,20 @@ class HorseCrawler:
 
         try:
             html = doc.read().decode('utf-8')
+        except timeout:
+            self.debugService.add('ERROR', 'Failed to reach {} (reason: timeout)'.format(url))
+            return
         except UnicodeDecodeError:
             self.debugService.add('ERROR', 'We failed to decode a symbol on {}... Lets throw out the entire thing then.'.format(url))
             return
 
         self.debugService.add('DOWNLOAD', 'Adding {}'.format(url))
-        self.horse_db.insertOrUpdatePage(url, html)
-        normalizedUrls = self.normalizeUrls(url, self.extractLinks(html))
-        self._apply(self.addToQueue, list(filter(self.shouldCrawl, normalizedUrls)))
+        normalizedUrls = list(set(self.normalizeUrls(url, self.extractLinks(html))))
+        self.horse_db.insertOrUpdatePage(url, html, normalizedUrls)
+        self._apply(self.addToQueue, normalizedUrls)
 
     def addToQueue(self, url):
-        if self.shouldCrawl(url):
+        if self.shouldAddToQueue(url):
             self.queue.put(url)
 
     def crawlSingle(self):

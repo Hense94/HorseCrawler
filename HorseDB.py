@@ -53,6 +53,16 @@ class HorseDB:
                 `url`       TEXT NOT NULL
             );
         ''')
+
+        c.execute(''' 
+            CREATE TABLE `linkTable` (
+                `from_page_id`  INTEGER NOT NULL,
+                `to_page_url`   TEXT NOT NULL,
+                PRIMARY KEY (from_page_id, to_page_url)
+            );
+        ''')
+
+
         self.dbconn.commit()
         c.close()
 
@@ -89,6 +99,9 @@ class HorseDB:
             c = self.dbconn.cursor()
             c.execute('UPDATE hosts SET last_visited = ? WHERE host = ?', (now, urlparts.netloc))
             self.dbconn.commit()
+
+        pass
+        pass
         pass
 
     def getPage(self, url):
@@ -108,17 +121,30 @@ class HorseDB:
                   (hostid, url, doc, now,))
         self.dbconn.commit()
 
-    def updatePage(self, url):
+    def updatePage(self, url, doc):
         now = time.time()
         c = self.dbconn.cursor()
-        c.execute('UPDATE pages SET last_visited = ? WHERE url = ?', (now, url))
+        c.execute('UPDATE pages SET last_visited = ?, document = ? WHERE url = ?', (now, doc, url))
         self.dbconn.commit()
 
-    def insertOrUpdatePage(self, url, doc):
+    def updateLinkTable(self, url, links):
+        page = self.getPage(url)
+        from_page_id = page[0]
+
+        c = self.dbconn.cursor()
+        c.execute('DELETE FROM linkTable WHERE from_page_id = ?', (from_page_id,))
+        self.dbconn.commit()
+        for link in links:
+            c.execute('INSERT INTO linkTable VALUES (?, ?)', (from_page_id, link))
+            self.dbconn.commit()
+
+    def insertOrUpdatePage(self, url, doc, normalized_outbound_urls):
         self.insertOrUpdateHost(url)
         if self.getPage(url) is None:
             self.insertPage(url, doc)
-        self.updatePage(url)
+        else:
+            self.updatePage(url, doc)
+        self.updateLinkTable(url, normalized_outbound_urls)
 
     def isInQueue(self, url):
         c = self.dbconn.cursor()
@@ -178,6 +204,10 @@ class HorseDB:
 
     def enqueue(self, url):
         host = self.getHost(url)
+        if host is None:
+            self.insertOrUpdateHost(url)
+            host = self.getHost(url)
+
         hostid = host[0]
 
         c = self.dbconn.cursor()

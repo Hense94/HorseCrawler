@@ -8,8 +8,8 @@ import time
 from HorseCrawler import HorseCrawler
 from DebugService import DebugService
 
-DEBUGSERVICE = DebugService(['DONE', 'DOWNLOAD', 'TIME'])
-DEBUGSERVICE = DebugService(['ALL'])
+DEBUGSERVICE = DebugService()
+DEBUGSERVICE = DebugService(['DONE', 'DOWNLOAD', 'TIME', 'ERROR'])
 
 RUNNING = True
 def exit_gracefully(signum, frame):
@@ -18,8 +18,8 @@ def exit_gracefully(signum, frame):
     DEBUGSERVICE.add('DONE', 'JUST ONE MORE!!')
     RUNNING = False
 
-# signal.signal(signal.SIGINT, exit_gracefully)
-# signal.signal(signal.SIGTERM, exit_gracefully)
+signal.signal(signal.SIGINT, exit_gracefully)
+signal.signal(signal.SIGTERM, exit_gracefully)
 
 SEED = ['https://antonchristensen.net']
 CRAWLER = HorseCrawler(SEED, DEBUGSERVICE)
@@ -27,7 +27,9 @@ CRAWLER = HorseCrawler(SEED, DEBUGSERVICE)
 TIMES = []
 while RUNNING:
     TIMESTART = time.time()
+    
     CRAWLER.crawlSingle()
+    
     TIMETAKEN = time.time() - TIMESTART
     TIMES.append(TIMETAKEN)
     AVERAGE = sum(TIMES) / len(TIMES)

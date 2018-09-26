@@ -20,8 +20,7 @@ class Robert:
 
     def __getDomain(self, url):
         parsedUrl = urlparse(url)
-        # self.domain = '{}://{}/'.format(parsedUrl.scheme, parsedUrl.netloc)
-        self.domain = 'http://{}/'.format(parsedUrl.netloc)
+        self.domain = '{}://{}/'.format(parsedUrl.scheme, parsedUrl.netloc)
 
     def __getRobotsString(self):
         url = '{}robots.txt'.format(self.domain)
@@ -46,6 +45,10 @@ class Robert:
                 self.debugService.add('ERROR', 'Failed to reach {} (reason: {})'.format(url, e.reason))
             except timeout:
                 self.debugService.add('ERROR', 'Failed to reach {} (reason: timeout)'.format(url))
+            except UnicodeDecodeError:
+                self.debugService.add('ERROR', 'Failed to read {} (reason: encoding error)'.format(url))
+            except UnicodeError:
+                self.debugService.add('ERROR', 'Failed to read {} (reason: encoding error)'.format(url))
 
             self.db.updateRobertRecord(url, self.disallowedPaths)
                 
