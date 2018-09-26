@@ -5,7 +5,7 @@ Abstractions over the use of the HorseCrawler database
 from urllib.parse import urlparse
 import json
 import time
-import sqlite3
+import psycopg2
 
 class HorseDB:
     def __init__(self, debugService):
@@ -16,11 +16,13 @@ class HorseDB:
 
     @staticmethod
     def getDatabaseConn():
-        return sqlite3.connect('db.sqlite3')
+        # return psycopg2.connect('dbname=db user=user password=pass')
+        return psycopg2.connect('dbname=db user=user password=pass host=127.0.0.1')
 
     def databaseExists(self):
         c = self.dbconn.cursor()
-        c.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='q';")
+        # c.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='q';")
+        c.execute("SELECT * FROM information_schema.tables WHERE table_name='q';")
 
         return len(c.fetchall()) > 0
 
@@ -29,35 +31,35 @@ class HorseDB:
 
         c = self.dbconn.cursor()
         c.execute(''' 
-            CREATE TABLE `pages` (
-                `id`    INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT UNIQUE,
-                `host_id`   INTEGER NOT NULL,
-                `url`   TEXT NOT NULL,
-                `document`  BLOB NOT NULL,
-                `last_visited`    NUMERIC NOT NULL
+            CREATE TABLE pages (
+                id            SERIAL    NOT NULL PRIMARY KEY  UNIQUE,
+                host_id       INT       NOT NULL,
+                url           VARCHAR   NOT NULL,
+                document      TEXT      NOT NULL,
+                last_visited  NUMERIC   NOT NULL
             );
         ''')
         c.execute(''' 
-            CREATE TABLE `hosts` (
-                `id`    INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT UNIQUE,
-                `host`  TEXT NOT NULL UNIQUE,
-                `last_visited`  INTEGER NOT NULL,
-                `disallow_list` TEXT NOT NULL,
-                `disallow_list_updated` INTEGER NOT NULL
+            CREATE TABLE hosts (
+                id                      SERIAL  NOT NULL PRIMARY KEY UNIQUE,
+                host                    VARCHAR NOT NULL UNIQUE,
+                last_visited            NUMERIC NOT NULL,
+                disallow_list           VARCHAR NOT NULL,
+                disallow_list_updated   NUMERIC NOT NULL
             );
         ''')
         c.execute(''' 
-            CREATE TABLE `q` (
-                `id`        INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT UNIQUE,
-                `host_id`   INTEGER NOT NULL,
-                `url`       TEXT NOT NULL
+            CREATE TABLE q (
+                id        SERIAL    NOT NULL PRIMARY KEY UNIQUE,
+                host_id   INT       NOT NULL,
+                url       VARCHAR   NOT NULL
             );
         ''')
 
         c.execute(''' 
-            CREATE TABLE `linkTable` (
-                `from_page_id`  INTEGER NOT NULL,
-                `to_page_url`   TEXT NOT NULL,
+            CREATE TABLE linkTable (
+                from_page_id  INT       NOT NULL,
+                to_page_url   VARCHAR   NOT NULL,
                 PRIMARY KEY (from_page_id, to_page_url)
             );
         ''')
@@ -68,19 +70,19 @@ class HorseDB:
 
     def isPageInTheDB(self, url):
         c = self.dbconn.cursor()
-        c.execute('SELECT COUNT(*) FROM pages WHERE url = ?', (url,))
+        c.execute('SELECT COUNT(*) FROM pages WHERE url = %s', (url,))
         return c.fetchone()[0] > 0
 
     def isPageOld(self, url):
         c = self.dbconn.cursor()
-        c.execute('SELECT last_visited FROM pages WHERE url = ?', (url,))
+        c.execute('SELECT last_visited FROM pages WHERE url = %s', (url,))
         last_visited = c.fetchone()[0]
         return last_visited < time.time() - 604800
 
     def getHost(self, url):
         urlparts = urlparse(url)
         c = self.dbconn.cursor()
-        c.execute('SELECT * FROM hosts WHERE host = ?', (urlparts.netloc,))
+        c.execute('SELECT * FROM hosts WHERE host = %s', (urlparts.netloc,))
         results = c.fetchall()
         if len(results) == 0:
             return None
@@ -89,24 +91,27 @@ class HorseDB:
     def insertOrUpdateHost(self, url):
         urlparts = urlparse(url)
         now = time.time()
+
+        
+        # DANGER DANGER STRANGER SQUEZE THAT LEMMMMMON
         if self.getHost(url) is None:
             c = self.dbconn.cursor()
             c.execute(
-                'INSERT INTO hosts (host, last_visited, disallow_list, disallow_list_updated) VALUES (?, ?, ?, ?)',
+                'INSERT INTO hosts (host, last_visited, disallow_list, disallow_list_updated) VALUES (%s, %s, %s, %s)',
                 (urlparts.netloc, now, "", 0))
             self.dbconn.commit()
         else:
             c = self.dbconn.cursor()
-            c.execute('UPDATE hosts SET last_visited = ? WHERE host = ?', (now, urlparts.netloc))
+            c.execute('UPDATE hosts SET last_visited = %s WHERE host = %s', (now, urlparts.netloc))
             self.dbconn.commit()
-
+        # DANGER DANGER STRANGER SQUEZE THAT LEMMMMMON
         pass
         pass
         pass
 
     def getPage(self, url):
         c = self.dbconn.cursor()
-        c.execute('SELECT * FROM pages WHERE url = ?', (url,))
+        c.execute('SELECT * FROM pages WHERE url = %s', (url,))
         results = c.fetchall()
         if len(results) == 0:
             return None
@@ -117,14 +122,14 @@ class HorseDB:
         hostid = self.getHost(url)[0]
 
         c = self.dbconn.cursor()
-        c.execute('INSERT INTO pages (host_id, url, document, last_visited) VALUES (?, ?, ?, ?)',
+        c.execute('INSERT INTO pages (host_id, url, document, last_visited) VALUES (%s, %s, %s, %s)',
                   (hostid, url, doc, now,))
         self.dbconn.commit()
 
     def updatePage(self, url, doc):
         now = time.time()
         c = self.dbconn.cursor()
-        c.execute('UPDATE pages SET last_visited = ?, document = ? WHERE url = ?', (now, doc, url))
+        c.execute('UPDATE pages SET last_visited = %s, document = %s WHERE url = %s', (now, doc, url))
         self.dbconn.commit()
 
     def updateLinkTable(self, url, links):
@@ -132,10 +137,10 @@ class HorseDB:
         from_page_id = page[0]
 
         c = self.dbconn.cursor()
-        c.execute('DELETE FROM linkTable WHERE from_page_id = ?', (from_page_id,))
+        c.execute('DELETE FROM linkTable WHERE from_page_id = %s', (from_page_id,))
         self.dbconn.commit()
         for link in links:
-            c.execute('INSERT INTO linkTable VALUES (?, ?)', (from_page_id, link))
+            c.execute('INSERT INTO linkTable VALUES (%s, %s)', (from_page_id, link))
             self.dbconn.commit()
 
     def insertOrUpdatePage(self, url, doc, normalized_outbound_urls):
@@ -148,7 +153,7 @@ class HorseDB:
 
     def isInQueue(self, url):
         c = self.dbconn.cursor()
-        c.execute('SELECT COUNT(*) FROM q WHERE url = ?', (url,))
+        c.execute('SELECT COUNT(*) FROM q WHERE url = %s', (url,))
         results = c.fetchone()
         return results[0] > 0
 
@@ -169,7 +174,7 @@ class HorseDB:
         encodedList = json.dumps(disallowedList)
 
         c = self.dbconn.cursor()
-        c.execute('UPDATE hosts SET disallow_list = ?, disallow_list_updated = ? WHERE host = ?',
+        c.execute('UPDATE hosts SET disallow_list = %s, disallow_list_updated = %s WHERE host = %s',
                   (encodedList, now, host,))
         self.dbconn.commit()
 
@@ -183,16 +188,17 @@ class HorseDB:
             SELECT * FROM q 
             JOIN hosts AS h 
                 ON q.host_id = h.id 
-            WHERE h.last_visited < ? 
-            ORDER BY id 
-            ASC LIMIT 1;''', ((now - hostRestitutionTimeInSeconds),)
+            WHERE h.last_visited < %s 
+            ORDER BY q.id 
+            ASC 
+            LIMIT 1;''', ((now - hostRestitutionTimeInSeconds),)
         )
         row = c.fetchone()
         if row is None:
             self.debugService.add('WARNING', 'We visited everything recently... Lets just visit something again and not care about being so fucking polite')
             c.execute('''SELECT * FROM q ORDER BY id ASC LIMIT 1;''')
             row = c.fetchone()
-        c.execute('DELETE FROM q WHERE id = ?', (row[0],))
+        c.execute('DELETE FROM q WHERE id = %s', (row[0],))
         # !!! TODO: WARNING: STRANGER DANGER: pythonDB API will not make these two SQL queries into one transaction !!!
 
         return row[2]
@@ -211,6 +217,6 @@ class HorseDB:
         hostid = host[0]
 
         c = self.dbconn.cursor()
-        c.execute('INSERT INTO q (url, host_id) VALUES (?, ?)', (url, hostid))
+        c.execute('INSERT INTO q (url, host_id) VALUES (%s, %s)', (url, hostid))
         self.dbconn.commit()
 
