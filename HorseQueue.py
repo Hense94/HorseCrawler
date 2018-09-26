@@ -1,19 +1,28 @@
-from urllib.error import HTTPError, URLError
-from urllib.parse import urlparse
+"""
+    HorseQueue used to be usefull...
+    not so much anymore.
+"""
 
 class HorseQueue:
-    def __init__(self, db, debugService):
+    """
+        Nowadays the HorseQueue is wholy
+        dependant on a HorseDB
+    """
+    def __init__(self, horse_db, debugService):
+        """ Initializes a Q with a HorseDB instance"""
         self.debugService = debugService
-        self.db = db
+        self.horse_db = horse_db
 
     def empty(self):
-        return self.db.qSize() == 0     
+        """Checks if the Q is empty"""
+        return self.horse_db.qSize() == 0
 
     def get(self):
-        result = self.db.popQueue()
+        """Removes an element from the queue and returns it"""
+        result = self.horse_db.popQueue()
         self.debugService.add('INFO', 'Got {} from the queue'.format(result))
-
         return result
 
     def put(self, url):
-        self.db.enqueue(url)
+        """Inserts an element into the queue"""
+        self.horse_db.enqueue(url)

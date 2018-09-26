@@ -1,3 +1,7 @@
+"""
+HorseCrawler implementation
+"""
+
 from urllib.error import HTTPError, URLError
 from urllib.parse import urlparse
 import urllib.request
@@ -9,41 +13,47 @@ from HorseQueue import HorseQueue
 
 
 class HorseCrawler:
+    """
+    HorseCrawler will crawl the entire web.
+    One page at time or untill it's on every
+    Robert.txt page there is.
+    """
     def __init__(self, seedUrls, debugService):
         self.debugService = debugService
 
-        self.db = HorseDB(debugService)
-        self.q = HorseQueue(self.db, debugService)
+        self.horse_db = HorseDB(debugService)
+        self.queue = HorseQueue(self.horse_db, debugService)
+        print ("JKLJKSLADJAKLD")
         for url in seedUrls:
             self.addToQueue(url)
 
-    
     @staticmethod
-    def _apply(f, l):
-        for x in l:
-            f(x)
+    def _apply(func, items):
+        for item in items:
+            func(item)
 
     @staticmethod
-    def isResourceURL(url):
+    def is_resource_url(url):
+        """ """
         return bool(re.search(r'\.(pdf|jpg|jpeg|gif|png)$', url))
 
     def shouldCrawl(self, url):  # TODO: Implement more
         # Are we allowed?
-        r = Robert('HorseBot', url, self.db, self.debugService)
+        r = Robert('HorseBot', url, self.horse_db, self.debugService)
         if not r.canAccessPath(url):
             return False
 
         # Is it a resource
-        if self.isResourceURL(url):
+        if self.is_resource_url(url):
             self.debugService.add('INFO', '{} is probably some stupid format which we shouldn\'t read'.format(url))
             return False
 
-        if self.db.isInQueue(url):
+        if self.horse_db.isInQueue(url):
             self.debugService.add('INFO', '{} is already in the queueu'.format(url))
             return False
 
-        if self.db.isPageInTheDB(url):
-            isOld = self.db.isPageOld(url)
+        if self.horse_db.isPageInTheDB(url):
+            isOld = self.horse_db.isPageOld(url)
             if not isOld: 
                 self.debugService.add('INFO', '{} is already in the DB and crawled recently'.format(url))
 
@@ -100,18 +110,17 @@ class HorseCrawler:
             return
 
         self.debugService.add('DOWNLOAD', 'Adding {}'.format(url))
-
-        self.db.insertOrUpdatePage(url, html)
+        self.horse_db.insertOrUpdatePage(url, html)
         normalizedUrls = self.normalizeUrls(url, self.extractLinks(html))
         self._apply(self.addToQueue, list(filter(self.shouldCrawl, normalizedUrls)))
 
     def addToQueue(self, url):
         if self.shouldCrawl(url):
-            self.q.put(url)
+            self.queue.put(url)
 
     def crawlSingle(self):
-        if self.q.empty():
+        if self.queue.empty():
             self.debugService.add('DONE', 'The web has been crawled. No more to see here.')
             return
-        url = self.q.get()
+        url = self.queue.get()
         self.parsePage(url)

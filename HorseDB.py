@@ -1,5 +1,8 @@
-from urllib.parse import urlparse
+"""
+Abstractions over the use of the HorseCrawler database
+"""
 
+from urllib.parse import urlparse
 import json
 import time
 import sqlite3

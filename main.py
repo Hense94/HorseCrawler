@@ -1,28 +1,34 @@
+"""
+This is just a quick initialisation
+of a HorseCrawler instance
+"""
+
 import signal
 import time
 from HorseCrawler import HorseCrawler
 from DebugService import DebugService
 
-ds = DebugService(['ALL'])
-ds = DebugService(['DONE', 'DOWNLOAD', 'TIME'])
+DEBUGSERVICE = DebugService(['DONE', 'DOWNLOAD', 'TIME'])
+DEBUGSERVICE = DebugService(['ALL'])
 
-running = True
+RUNNING = True
 def exit_gracefully(signum, frame):
-    global running
-    ds.add('DONE', 'JUST ONE MORE!!')
-    running = False
+    """ Handle stop signals """
+    global RUNNING
+    DEBUGSERVICE.add('DONE', 'JUST ONE MORE!!')
+    RUNNING = False
 
-signal.signal(signal.SIGINT, exit_gracefully)
-signal.signal(signal.SIGTERM, exit_gracefully)
+# signal.signal(signal.SIGINT, exit_gracefully)
+# signal.signal(signal.SIGTERM, exit_gracefully)
 
-seed = ['https://antonchristensen.net']
-crawler = HorseCrawler(seed, ds)
+SEED = ['https://antonchristensen.net']
+CRAWLER = HorseCrawler(SEED, DEBUGSERVICE)
 
-times = []
-while running:
-    timeStart = time.time()
-    crawler.crawlSingle()
-    timeTaken = time.time() - timeStart
-    times.append(timeTaken)
-    average = sum(times) / len(times)
-    ds.add('TIME', 'Last page took {:.2} seconds. Average is {:.2} ({:.2} pages per second)'.format(timeTaken, average, 1 / average))
+TIMES = []
+while RUNNING:
+    TIMESTART = time.time()
+    CRAWLER.crawlSingle()
+    TIMETAKEN = time.time() - TIMESTART
+    TIMES.append(TIMETAKEN)
+    AVERAGE = sum(TIMES) / len(TIMES)
+    DEBUGSERVICE.add('TIME', 'Last page took {:.2} seconds. Average is {:.2} ({:.2} pages per second)'.format(TIMETAKEN, AVERAGE, 1 / AVERAGE))
