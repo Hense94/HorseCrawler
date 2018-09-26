@@ -6,6 +6,7 @@ from urllib.error import HTTPError, URLError
 from urllib.parse import urlparse
 import urllib.request
 import re
+from ssl import CertificateError
 from socket import timeout
 from Robert import Robert
 from HorseDB import HorseDB
@@ -94,8 +95,11 @@ class HorseCrawler:
         except timeout:
             self.debugService.add('ERROR', 'Failed to reach {} (reason: timeout)'.format(url))
             return None
-        except UnicodeEncodeError:
+        except (UnicodeDecodeError, UnicodeError):
             self.debugService.add('ERROR', 'Failed to read {} (reason: encoding error)'.format(url))
+            return None
+        except CertificateError:
+            self.debugService.add('ERROR', 'Failed to read {} (reason: SSL error)'.format(url))
             return None
         else:
             return file

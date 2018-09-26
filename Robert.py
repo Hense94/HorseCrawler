@@ -1,4 +1,5 @@
 import re
+from ssl import CertificateError
 import urllib.request
 from urllib.error import URLError, HTTPError
 from urllib.parse import urlparse
@@ -25,7 +26,7 @@ class Robert:
     def __getRobotsString(self):
         url = '{}robots.txt'.format(self.domain)
 
-        if(self.db.robertRecordIsRecent(url)):
+        if self.db.robertRecordIsRecent(url):
             self.disallowedPaths = self.db.getRobertRecord(url)
         else:
             request = urllib.request.Request(url)
@@ -45,10 +46,10 @@ class Robert:
                 self.debugService.add('ERROR', 'Failed to reach {} (reason: {})'.format(url, e.reason))
             except timeout:
                 self.debugService.add('ERROR', 'Failed to reach {} (reason: timeout)'.format(url))
-            except UnicodeDecodeError:
+            except (UnicodeDecodeError, UnicodeError):
                 self.debugService.add('ERROR', 'Failed to read {} (reason: encoding error)'.format(url))
-            except UnicodeError:
-                self.debugService.add('ERROR', 'Failed to read {} (reason: encoding error)'.format(url))
+            except CertificateError:
+                self.debugService.add('ERROR', 'Failed to read {} (reason: SSL error)'.format(url))
 
             self.db.updateRobertRecord(url, self.disallowedPaths)
                 

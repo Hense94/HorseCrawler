@@ -11,17 +11,18 @@ class HorseDB:
     def __init__(self, debugService):
         self.debugService = debugService
         self.dbconn = self.getDatabaseConn()
-        if (not self.databaseExists()):
+
+        #self.dbconn.set_isolation_level(3)
+
+        if not self.databaseExists():
             self.createDatabase()
 
     @staticmethod
     def getDatabaseConn():
-        # return psycopg2.connect('dbname=db user=user password=pass')
-        return psycopg2.connect('dbname=db user=user password=pass host=127.0.0.1')
+        return psycopg2.connect(dbname='db', user='postgres', password='root', host='127.0.0.1')
 
     def databaseExists(self):
         c = self.dbconn.cursor()
-        # c.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='q';")
         c.execute("SELECT * FROM information_schema.tables WHERE table_name='q';")
 
         return len(c.fetchall()) > 0
@@ -92,22 +93,17 @@ class HorseDB:
         urlparts = urlparse(url)
         now = time.time()
 
-        
-        # DANGER DANGER STRANGER SQUEZE THAT LEMMMMMON
+        c = self.dbconn.cursor()
+
+        c.execute('BEGIN;')
+
         if self.getHost(url) is None:
-            c = self.dbconn.cursor()
-            c.execute(
-                'INSERT INTO hosts (host, last_visited, disallow_list, disallow_list_updated) VALUES (%s, %s, %s, %s)',
-                (urlparts.netloc, now, "", 0))
-            self.dbconn.commit()
+            c.execute('INSERT INTO hosts (host, last_visited, disallow_list, disallow_list_updated) VALUES (%s, %s, %s, %s)', (urlparts.netloc, now, "", 0))
         else:
-            c = self.dbconn.cursor()
             c.execute('UPDATE hosts SET last_visited = %s WHERE host = %s', (now, urlparts.netloc))
-            self.dbconn.commit()
-        # DANGER DANGER STRANGER SQUEZE THAT LEMMMMMON
-        pass
-        pass
-        pass
+
+        self.dbconn.commit()
+
 
     def getPage(self, url):
         c = self.dbconn.cursor()
@@ -183,7 +179,9 @@ class HorseDB:
         now = time.time()
         c = self.dbconn.cursor()
 
-        # !!! TODO: WARNING: STRANGER DANGER: pythonDB API will not make these two SQL queries into one transaction !!!
+
+        c.execute('BEGIN;')
+
         c.execute('''
             SELECT * FROM q 
             JOIN hosts AS h 
@@ -194,12 +192,16 @@ class HorseDB:
             LIMIT 1;''', ((now - hostRestitutionTimeInSeconds),)
         )
         row = c.fetchone()
+
         if row is None:
             self.debugService.add('WARNING', 'We visited everything recently... Lets just visit something again and not care about being so fucking polite')
             c.execute('''SELECT * FROM q ORDER BY id ASC LIMIT 1;''')
             row = c.fetchone()
+
         c.execute('DELETE FROM q WHERE id = %s', (row[0],))
-        # !!! TODO: WARNING: STRANGER DANGER: pythonDB API will not make these two SQL queries into one transaction !!!
+
+        self.dbconn.commit()
+
 
         return row[2]
 
