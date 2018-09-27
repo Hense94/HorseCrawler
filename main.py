@@ -9,7 +9,7 @@ from HorseCrawler import HorseCrawler
 from DebugService import DebugService
 
 DEBUGSERVICE = DebugService()
-DEBUGSERVICE = DebugService(['DONE', 'DOWNLOAD', 'TIME', 'ERROR'])
+DEBUGSERVICE = DebugService(['DONE', 'DOWNLOAD', 'TIME', 'ERROR', 'WARNING'])
 
 RUNNING = True
 def exit_gracefully(signum, frame):

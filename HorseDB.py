@@ -6,13 +6,15 @@ from urllib.parse import urlparse
 import json
 import time
 import psycopg2
+from psycopg2._psycopg import IntegrityError
+
 
 class HorseDB:
     def __init__(self, debugService):
         self.debugService = debugService
         self.dbconn = self.getDatabaseConn()
 
-        #self.dbconn.set_isolation_level(3)
+        # self.dbconn.set_isolation_level(3)
 
         if not self.databaseExists():
             self.createDatabase()
@@ -65,8 +67,8 @@ class HorseDB:
             );
         ''')
 
-
         self.dbconn.commit()
+
         c.close()
 
     def isPageInTheDB(self, url):
@@ -81,16 +83,19 @@ class HorseDB:
         return last_visited < time.time() - 604800
 
     def getHost(self, url):
-        urlparts = urlparse(url)
+        parsedUrl = urlparse(url)
+
         c = self.dbconn.cursor()
-        c.execute('SELECT * FROM hosts WHERE host = %s', (urlparts.netloc,))
+        c.execute('SELECT * FROM hosts WHERE host = %s', (parsedUrl.netloc,))
         results = c.fetchall()
+
         if len(results) == 0:
             return None
+
         return results[0]
 
     def insertOrUpdateHost(self, url):
-        urlparts = urlparse(url)
+        parsedUrl = urlparse(url)
         now = time.time()
 
         c = self.dbconn.cursor()
@@ -98,12 +103,13 @@ class HorseDB:
         c.execute('BEGIN;')
 
         if self.getHost(url) is None:
-            c.execute('INSERT INTO hosts (host, last_visited, disallow_list, disallow_list_updated) VALUES (%s, %s, %s, %s)', (urlparts.netloc, now, "", 0))
+            c.execute(
+                'INSERT INTO hosts (host, last_visited, disallow_list, disallow_list_updated) VALUES (%s, %s, %s, %s)',
+                (parsedUrl.netloc, now, "", 0))
         else:
-            c.execute('UPDATE hosts SET last_visited = %s WHERE host = %s', (now, urlparts.netloc))
+            c.execute('UPDATE hosts SET last_visited = %s WHERE host = %s', (now, parsedUrl.netloc))
 
         self.dbconn.commit()
-
 
     def getPage(self, url):
         c = self.dbconn.cursor()
@@ -115,11 +121,11 @@ class HorseDB:
 
     def insertPage(self, url, doc):
         now = time.time()
-        hostid = self.getHost(url)[0]
+        hostId = self.getHost(url)[0]
 
         c = self.dbconn.cursor()
         c.execute('INSERT INTO pages (host_id, url, document, last_visited) VALUES (%s, %s, %s, %s)',
-                  (hostid, url, doc, now,))
+                  (hostId, url, doc, now,))
         self.dbconn.commit()
 
     def updatePage(self, url, doc):
@@ -175,35 +181,42 @@ class HorseDB:
         self.dbconn.commit()
 
     def popQueue(self):
-        hostRestitutionTimeInSeconds = 1
+        hostRestitutionTimeInSeconds = 10
         now = time.time()
         c = self.dbconn.cursor()
 
+        while True:
+            try:
+                c.execute('BEGIN;')
 
-        c.execute('BEGIN;')
+                c.execute('''
+                    SELECT * FROM q 
+                    JOIN hosts AS h 
+                        ON q.host_id = h.id 
+                    WHERE h.last_visited < %s 
+                    ORDER BY q.id 
+                    ASC 
+                    LIMIT 1;''', ((now - hostRestitutionTimeInSeconds),))
+                row = c.fetchone()
 
-        c.execute('''
-            SELECT * FROM q 
-            JOIN hosts AS h 
-                ON q.host_id = h.id 
-            WHERE h.last_visited < %s 
-            ORDER BY q.id 
-            ASC 
-            LIMIT 1;''', ((now - hostRestitutionTimeInSeconds),)
-        )
-        row = c.fetchone()
+                if row is None:
+                    self.debugService.add('WARNING',
+                                          'We visited everything recently... Lets just visit something again and not care about being so fucking polite')
+                    c.execute('SELECT * FROM q ORDER BY id ASC LIMIT 1;')
+                    row = c.fetchone()
 
-        if row is None:
-            self.debugService.add('WARNING', 'We visited everything recently... Lets just visit something again and not care about being so fucking polite')
-            c.execute('''SELECT * FROM q ORDER BY id ASC LIMIT 1;''')
-            row = c.fetchone()
+                c.execute('DELETE FROM q WHERE id = %s', (row[0],))
 
-        c.execute('DELETE FROM q WHERE id = %s', (row[0],))
+                self.dbconn.commit()
 
-        self.dbconn.commit()
+                return row[2]
+
+            except IntegrityError:
+                print('Race condition!!!')
+
+            time.sleep(0.1)
 
 
-        return row[2]
 
     def qSize(self):
         c = self.dbconn.cursor()
@@ -216,9 +229,8 @@ class HorseDB:
             self.insertOrUpdateHost(url)
             host = self.getHost(url)
 
-        hostid = host[0]
+        hostId = host[0]
 
         c = self.dbconn.cursor()
-        c.execute('INSERT INTO q (url, host_id) VALUES (%s, %s)', (url, hostid))
+        c.execute('INSERT INTO q (url, host_id) VALUES (%s, %s)', (url, hostId))
         self.dbconn.commit()
-
