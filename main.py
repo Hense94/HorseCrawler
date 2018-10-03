@@ -26,9 +26,6 @@ signal.signal(signal.SIGTERM, exit_gracefully)
 SEED = ['https://antonchristensen.net']
 CRAWLER = HorseCrawler(SEED, DEBUGSERVICE)
 
-# cProfile.run('CRAWLER.crawlSingle()')
-
-
 TIMES = []
 while RUNNING:
     TIMESTART = time.time()

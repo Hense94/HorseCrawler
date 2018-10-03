@@ -6,8 +6,7 @@ from urllib.parse import urlparse
 import json
 import time
 import psycopg2
-from psycopg2._psycopg import IntegrityError
-from psycopg2.extensions import TransactionRollbackError
+import psycopg2.extras
 
 
 class HorsePostgresDB:
@@ -19,7 +18,7 @@ class HorsePostgresDB:
             self.rebuildDatabase()
         else:
             if not self.databaseExists():
-                self.createDatabase()
+                self.rebuildDatabase()
 
     @staticmethod
     def getDatabaseConn():
@@ -40,15 +39,17 @@ class HorsePostgresDB:
     def rebuildDatabase(self):
         tables = ['pages', 'hosts', 'q', 'linktable', 'revindex']
         for t in tables:
-            if(self.tableExists(t)):
+            if self.tableExists(t):
                 self.dropTable(t)
+
         self.createDatabase()
 
     def databaseExists(self):
         tables = ['pages', 'hosts', 'q', 'linktable', 'revindex']
         for t in tables:
-            if(not self.tableExists(t)):
+            if not self.tableExists(t):
                 return False
+
         return True
 
     def createDatabase(self):
@@ -65,6 +66,7 @@ class HorsePostgresDB:
                 last_visited  NUMERIC   NOT NULL
             );
         ''')
+
         c.execute(''' 
             CREATE TABLE hosts (
                 id                      SERIAL  NOT NULL PRIMARY KEY UNIQUE,
@@ -74,6 +76,7 @@ class HorsePostgresDB:
                 disallow_list_updated   NUMERIC NOT NULL
             );
         ''')
+
         c.execute(''' 
             CREATE TABLE q (
                 id        SERIAL    NOT NULL PRIMARY KEY UNIQUE,
@@ -131,8 +134,6 @@ class HorsePostgresDB:
 
         c = self.dbconn.cursor()
 
-        c.execute('BEGIN;')
-
         try:
             if self.getHost(url) is None:
                 c.execute(
@@ -142,15 +143,17 @@ class HorsePostgresDB:
                 c.execute('UPDATE hosts SET last_visited = %s WHERE host = %s', (now, parsedUrl.netloc))
 
             self.dbconn.commit()
-        except (TransactionRollbackError, psycopg2.InternalError):
+        except psycopg2.InternalError:
             pass
 
-    def getPage(self, url):
+    def getPageId(self, url):
         c = self.dbconn.cursor()
         c.execute('SELECT * FROM pages WHERE url = %s', (url,))
         results = c.fetchall()
+
         if len(results) == 0:
             return None
+
         return results[0]
 
     def insertPage(self, url, doc, lang):
@@ -158,9 +161,11 @@ class HorsePostgresDB:
         hostId = self.getHost(url)[0]
 
         c = self.dbconn.cursor()
-        c.execute('INSERT INTO pages (host_id, url, document, lang, last_visited) VALUES (%s, %s, %s, %s, %s)',
+        c.execute('INSERT INTO pages (host_id, url, document, lang, last_visited) VALUES (%s, %s, %s, %s, %s) RETURNING id;',
                   (hostId, url, doc, lang, now,))
         self.dbconn.commit()
+
+        return c.fetchone()[0]
 
     def updatePage(self, url, doc, lang):
         now = time.time()
@@ -168,36 +173,39 @@ class HorsePostgresDB:
         c.execute('UPDATE pages SET last_visited = %s, document = %s, lang = %s WHERE url = %s', (now, doc, lang, url))
         self.dbconn.commit()
 
-    def updateLinktable(self, url, links):
-        page = self.getPage(url)
-        from_page_id = page[0]
-
+    def updateLinktable(self, from_page_id, links):
         c = self.dbconn.cursor()
         c.execute('DELETE FROM linktable WHERE from_page_id = %s', (from_page_id,))
         self.dbconn.commit()
-        for link in links:
-            c.execute('INSERT INTO linktable VALUES (%s, %s)', (from_page_id, link))
-            self.dbconn.commit()
 
-    def updateRevindex(self, url, tokens):
-        page = self.getPage(url)
-        page_id = page[0]
+        params = [(from_page_id, link) for link in links]
 
+        psycopg2.extras.execute_values(c, 'INSERT INTO linktable (from_page_id, to_page_url) VALUES %s', params, page_size=1000)
+
+        self.dbconn.commit()
+
+    def updateRevindex(self, page_id, tokens):
         c = self.dbconn.cursor()
         c.execute('DELETE FROM revindex WHERE page_id = %s', (page_id,))
         self.dbconn.commit()
-        params = list(map(lambda token: (page_id, token), tokens))
-        c.executemany('INSERT INTO revindex (page_id, term) VALUES (%s, %s)', params)
+
+        params = [(page_id, token) for token in tokens]
+
+        psycopg2.extras.execute_values(c, 'INSERT INTO revindex (page_id, term) VALUES %s', params, page_size=1000)
+
         self.dbconn.commit()
 
     def insertOrUpdatePage(self, url, doc, normalized_outbound_urls, lang, tokens):
         self.insertOrUpdateHost(url)
-        if self.getPage(url) is None:
-            self.insertPage(url, doc, lang)
+        pageId = self.getPageId(url)
+
+        if pageId is None:
+            pageId = self.insertPage(url, doc, lang)
         else:
             self.updatePage(url, doc, lang)
-        self.updateLinktable(url, normalized_outbound_urls)
-        self.updateRevindex(url, tokens)
+
+        self.updateLinktable(pageId, normalized_outbound_urls)
+        self.updateRevindex(pageId, tokens)
 
     def isInQueue(self, url):
         c = self.dbconn.cursor()
@@ -250,14 +258,11 @@ class HorsePostgresDB:
 
             c.execute('DELETE FROM q WHERE id = %s', (row[0],))
             self.dbconn.commit()
-            
-            if(c.rowcount == 1):
+
+            if c.rowcount == 1:
                 return row[2]
 
             self.debugService.add('WARNING', 'Item was already removed from queueue')
-
-
-
 
     def qSize(self):
         c = self.dbconn.cursor()
