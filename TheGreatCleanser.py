@@ -161,6 +161,10 @@ class TheGreatCleanser:
 
         tokenList = TheGreatCleanser.tokenize(doc)
         tokenList = list(filter(lambda token: token != '', tokenList))
+
+        if len(tokenList) == 0:
+            return 'NaL', tokenList
+
         lang = TheGreatCleanser.whichGoodLang(tokenList)[0]
 
         if lang == 'NaL':
