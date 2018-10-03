@@ -7,27 +7,49 @@ import json
 import time
 import psycopg2
 from psycopg2._psycopg import IntegrityError
+from psycopg2.extensions import TransactionRollbackError
 
 
-class HorseDB:
-    def __init__(self, debugService):
+class HorsePostgresDB:
+    def __init__(self, debugService, dropDB=False):
         self.debugService = debugService
         self.dbconn = self.getDatabaseConn()
 
-        # self.dbconn.set_isolation_level(3)
-
-        if not self.databaseExists():
-            self.createDatabase()
+        if dropDB:
+            self.rebuildDatabase()
+        else:
+            if not self.databaseExists():
+                self.createDatabase()
 
     @staticmethod
     def getDatabaseConn():
-        return psycopg2.connect(dbname='db', user='postgres', password='root', host='127.0.0.1')
+        return psycopg2.connect(dbname='db', user='postgres', password='root', host='antonchristensen.net')
+        # return psycopg2.connect(dbname='db', user='postgres', password='root', host='172.0.0.1')
 
-    def databaseExists(self):
+    def tableExists(self, tableName):
         c = self.dbconn.cursor()
-        c.execute("SELECT * FROM information_schema.tables WHERE table_name='q';")
+        c.execute("SELECT * FROM information_schema.tables WHERE table_name=%s;", (tableName,))
 
         return len(c.fetchall()) > 0
+
+    def dropTable(self, tableName):
+        c = self.dbconn.cursor()
+        c.execute("DROP TABLE "+tableName+";")
+        self.dbconn.commit()
+
+    def rebuildDatabase(self):
+        tables = ['pages', 'hosts', 'q', 'linktable', 'revindex']
+        for t in tables:
+            if(self.tableExists(t)):
+                self.dropTable(t)
+        self.createDatabase()
+
+    def databaseExists(self):
+        tables = ['pages', 'hosts', 'q', 'linktable', 'revindex']
+        for t in tables:
+            if(not self.tableExists(t)):
+                return False
+        return True
 
     def createDatabase(self):
         self.debugService.add('INFO', 'Creating database')
@@ -39,6 +61,7 @@ class HorseDB:
                 host_id       INT       NOT NULL,
                 url           VARCHAR   NOT NULL,
                 document      TEXT      NOT NULL,
+                lang          VARCHAR(2) NOT NULL,
                 last_visited  NUMERIC   NOT NULL
             );
         ''')
@@ -60,10 +83,18 @@ class HorseDB:
         ''')
 
         c.execute(''' 
-            CREATE TABLE linkTable (
+            CREATE TABLE linktable (
                 from_page_id  INT       NOT NULL,
                 to_page_url   VARCHAR   NOT NULL,
                 PRIMARY KEY (from_page_id, to_page_url)
+            );
+        ''')
+
+        c.execute(''' 
+            CREATE TABLE revindex (
+                id        SERIAL    NOT NULL PRIMARY KEY UNIQUE,
+                term      VARCHAR   NOT NULL,
+                page_id   INT       NOT NULL
             );
         ''')
 
@@ -102,14 +133,17 @@ class HorseDB:
 
         c.execute('BEGIN;')
 
-        if self.getHost(url) is None:
-            c.execute(
-                'INSERT INTO hosts (host, last_visited, disallow_list, disallow_list_updated) VALUES (%s, %s, %s, %s)',
-                (parsedUrl.netloc, now, "", 0))
-        else:
-            c.execute('UPDATE hosts SET last_visited = %s WHERE host = %s', (now, parsedUrl.netloc))
+        try:
+            if self.getHost(url) is None:
+                c.execute(
+                    'INSERT INTO hosts (host, last_visited, disallow_list, disallow_list_updated) VALUES (%s, %s, %s, %s)',
+                    (parsedUrl.netloc, now, "", 0))
+            else:
+                c.execute('UPDATE hosts SET last_visited = %s WHERE host = %s', (now, parsedUrl.netloc))
 
-        self.dbconn.commit()
+            self.dbconn.commit()
+        except (TransactionRollbackError, psycopg2.InternalError):
+            pass
 
     def getPage(self, url):
         c = self.dbconn.cursor()
@@ -119,39 +153,51 @@ class HorseDB:
             return None
         return results[0]
 
-    def insertPage(self, url, doc):
+    def insertPage(self, url, doc, lang):
         now = time.time()
         hostId = self.getHost(url)[0]
 
         c = self.dbconn.cursor()
-        c.execute('INSERT INTO pages (host_id, url, document, last_visited) VALUES (%s, %s, %s, %s)',
-                  (hostId, url, doc, now,))
+        c.execute('INSERT INTO pages (host_id, url, document, lang, last_visited) VALUES (%s, %s, %s, %s, %s)',
+                  (hostId, url, doc, lang, now,))
         self.dbconn.commit()
 
-    def updatePage(self, url, doc):
+    def updatePage(self, url, doc, lang):
         now = time.time()
         c = self.dbconn.cursor()
-        c.execute('UPDATE pages SET last_visited = %s, document = %s WHERE url = %s', (now, doc, url))
+        c.execute('UPDATE pages SET last_visited = %s, document = %s, lang = %s WHERE url = %s', (now, doc, lang, url))
         self.dbconn.commit()
 
-    def updateLinkTable(self, url, links):
+    def updateLinktable(self, url, links):
         page = self.getPage(url)
         from_page_id = page[0]
 
         c = self.dbconn.cursor()
-        c.execute('DELETE FROM linkTable WHERE from_page_id = %s', (from_page_id,))
+        c.execute('DELETE FROM linktable WHERE from_page_id = %s', (from_page_id,))
         self.dbconn.commit()
         for link in links:
-            c.execute('INSERT INTO linkTable VALUES (%s, %s)', (from_page_id, link))
+            c.execute('INSERT INTO linktable VALUES (%s, %s)', (from_page_id, link))
             self.dbconn.commit()
 
-    def insertOrUpdatePage(self, url, doc, normalized_outbound_urls):
+    def updateRevindex(self, url, tokens):
+        page = self.getPage(url)
+        page_id = page[0]
+
+        c = self.dbconn.cursor()
+        c.execute('DELETE FROM revindex WHERE page_id = %s', (page_id,))
+        self.dbconn.commit()
+        params = list(map(lambda token: (page_id, token), tokens))
+        c.executemany('INSERT INTO revindex (page_id, term) VALUES (%s, %s)', params)
+        self.dbconn.commit()
+
+    def insertOrUpdatePage(self, url, doc, normalized_outbound_urls, lang, tokens):
         self.insertOrUpdateHost(url)
         if self.getPage(url) is None:
-            self.insertPage(url, doc)
+            self.insertPage(url, doc, lang)
         else:
-            self.updatePage(url, doc)
-        self.updateLinkTable(url, normalized_outbound_urls)
+            self.updatePage(url, doc, lang)
+        self.updateLinktable(url, normalized_outbound_urls)
+        self.updateRevindex(url, tokens)
 
     def isInQueue(self, url):
         c = self.dbconn.cursor()
@@ -186,35 +232,30 @@ class HorseDB:
         c = self.dbconn.cursor()
 
         while True:
-            try:
-                c.execute('BEGIN;')
+            c.execute('''
+                SELECT * FROM q 
+                JOIN hosts AS h 
+                    ON q.host_id = h.id 
+                WHERE h.last_visited < %s 
+                ORDER BY q.id 
+                ASC 
+                LIMIT 1;''', ((now - hostRestitutionTimeInSeconds),))
+            row = c.fetchone()
 
-                c.execute('''
-                    SELECT * FROM q 
-                    JOIN hosts AS h 
-                        ON q.host_id = h.id 
-                    WHERE h.last_visited < %s 
-                    ORDER BY q.id 
-                    ASC 
-                    LIMIT 1;''', ((now - hostRestitutionTimeInSeconds),))
+            if row is None:
+                self.debugService.add('WARNING',
+                                      'We visited everything recently... Lets just visit something again and not care about being so fucking polite')
+                c.execute('SELECT * FROM q ORDER BY id ASC LIMIT 1;')
                 row = c.fetchone()
 
-                if row is None:
-                    self.debugService.add('WARNING',
-                                          'We visited everything recently... Lets just visit something again and not care about being so fucking polite')
-                    c.execute('SELECT * FROM q ORDER BY id ASC LIMIT 1;')
-                    row = c.fetchone()
-
-                c.execute('DELETE FROM q WHERE id = %s', (row[0],))
-
-                self.dbconn.commit()
-
+            c.execute('DELETE FROM q WHERE id = %s', (row[0],))
+            self.dbconn.commit()
+            
+            if(c.rowcount == 1):
                 return row[2]
 
-            except IntegrityError:
-                print('Race condition!!!')
+            self.debugService.add('WARNING', 'Item was already removed from queueue')
 
-            time.sleep(0.1)
 
 
 

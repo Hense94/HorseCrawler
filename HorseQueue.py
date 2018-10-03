@@ -20,7 +20,7 @@ class HorseQueue:
     def get(self):
         """Removes an element from the queue and returns it"""
         result = self.horse_db.popQueue()
-        self.debugService.add('INFO', 'Got {} from the queue'.format(result))
+        self.debugService.add('QUEUE', 'Got {} from the queue'.format(result))
         return result
 
     def put(self, url):

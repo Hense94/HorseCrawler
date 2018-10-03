@@ -9,8 +9,10 @@ import re
 from ssl import CertificateError
 from socket import timeout
 from Robert import Robert
-from HorseDB import HorseDB
+# from HorseSqliteDB import HorseSqliteDB
+from HorsePostgresDB import HorsePostgresDB
 from HorseQueue import HorseQueue
+from TheGreatCleanser import TheGreatCleanser
 
 
 class HorseCrawler:
@@ -22,7 +24,8 @@ class HorseCrawler:
     def __init__(self, seedUrls, debugService):
         self.debugService = debugService
 
-        self.horse_db = HorseDB(debugService)
+        self.horse_db = HorsePostgresDB(debugService)
+        # self.horse_db = HorseSqliteDB(debugService)
         self.queue = HorseQueue(self.horse_db, debugService)
         for url in seedUrls:
             self.addToQueue(url)
@@ -84,10 +87,20 @@ class HorseCrawler:
         except (UnicodeDecodeError, UnicodeError):
             self.debugService.add('ERROR', 'Failed to read {} (reason: encoding error)'.format(url))
             return
+        except timeout:
+            self.debugService.add('ERROR', 'Failed to read {} (reason: Timeout)'.format(url))
+            return
 
-        self.debugService.add('DOWNLOAD', 'Adding {}'.format(url))
+
+        lang, tokenList = TheGreatCleanser.cleanse(html)
+        if lang == "NaL":
+            self.debugService.add("INFO", "NaL: {}".format(url))
+            return
+
         normalizedUrls = list(set(self.normalizeUrls(url, self.extractLinks(html))))
-        self.horse_db.insertOrUpdatePage(url, html, normalizedUrls)
+        self.debugService.add('DOWNLOAD', 'Adding {}'.format(url))
+
+        self.horse_db.insertOrUpdatePage(url, html, normalizedUrls, lang, tokenList)
         self._apply(self.addToQueue, normalizedUrls)
 
     def addToQueue(self, url):

@@ -7,9 +7,11 @@ import signal
 import time
 from HorseCrawler import HorseCrawler
 from DebugService import DebugService
+import cProfile
 
-DEBUGSERVICE = DebugService()
-DEBUGSERVICE = DebugService(['DONE', 'DOWNLOAD', 'TIME', 'ERROR', 'WARNING'])
+
+# DEBUGSERVICE = DebugService()
+DEBUGSERVICE = DebugService(['DONE', 'DOWNLOAD', 'ERROR', 'WARNING', 'QUEUE'])
 
 RUNNING = True
 def exit_gracefully(signum, frame):
@@ -23,6 +25,9 @@ signal.signal(signal.SIGTERM, exit_gracefully)
 
 SEED = ['https://antonchristensen.net']
 CRAWLER = HorseCrawler(SEED, DEBUGSERVICE)
+
+# cProfile.run('CRAWLER.crawlSingle()')
+
 
 TIMES = []
 while RUNNING:
