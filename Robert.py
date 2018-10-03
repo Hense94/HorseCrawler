@@ -70,7 +70,7 @@ class Robert:
 
             match = re.search('^Disallow:\s*(\S*)$', line)
             if match != None and relevantUserAgent:
-                self.disallowedPaths.append(match[1].replace('$', ''))
+                self.disallowedPaths.append(match.group(1).replace('$', ''))
 
     def canAccessPath(self, path):
         actualPath = urlparse(path).path
