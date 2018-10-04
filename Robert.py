@@ -26,8 +26,13 @@ class Robert:
     def __getRobotsString(self):
         url = '{}robots.txt'.format(self.domain)
 
-        if self.db.robertRecordIsRecent(url):
-            self.disallowedPaths = self.db.getRobertRecord(url)
+        hostId, disallowedList = self.db.getDisallowListIfValid(url)
+
+        if hostId is None:
+            self.db.insertHost(url)
+
+        if disallowedList is not None:
+            self.disallowedPaths = disallowedList
         else:
             request = urllib.request.Request(url)
             try:
@@ -51,8 +56,7 @@ class Robert:
             except CertificateError:
                 self.debugService.add('ERROR', 'Failed to read {} (reason: SSL error)'.format(url))
 
-            self.db.updateRobertRecord(url, self.disallowedPaths)
-                
+            self.db.setDisallowList(url, self.disallowedPaths)
 
     def __retrieveDisallowedPaths (self):
         relevantUserAgent = False
@@ -69,7 +73,7 @@ class Robert:
                     relevantUserAgent = False
 
             match = re.search('^Disallow:\s*(\S*)$', line)
-            if match != None and relevantUserAgent:
+            if match is not None and relevantUserAgent:
                 self.disallowedPaths.append(match.group(1).replace('$', ''))
 
     def canAccessPath(self, path):

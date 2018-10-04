@@ -2,8 +2,9 @@ import time
 import psycopg2
 
 dbconn = psycopg2.connect(dbname='db', user='postgres', password='root', host='antonchristensen.net')
+dbconn = psycopg2.connect(dbname='db', user='postgres', password='root', host='localhost')
 
-n = 20
+n = 5
 lastN = []
 
 last = -1
