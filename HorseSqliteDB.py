@@ -7,7 +7,7 @@ import json
 import time
 import sqlite3
 
-class HorseSqliteDB:
+class HorseDB:
     def __init__(self, debugService):
         self.debugService = debugService
         self.dbconn = self.getDatabaseConn()

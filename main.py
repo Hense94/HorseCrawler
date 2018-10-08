@@ -17,8 +17,8 @@ def timeTaken(func):
     return time.time() - start
 
 
+ds = DebugService(['DONE', 'DOWNLOAD', 'TIME'])
 ds = DebugService()
-ds = DebugService(['DONE', 'DOWNLOAD', 'ERROR', 'QUEUE', 'TIME'])
 
 running = True
 

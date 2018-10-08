@@ -1,10 +1,12 @@
 import time
 import psycopg2
 
-dbconn = psycopg2.connect(dbname='db', user='postgres', password='root', host='antonchristensen.net')
-dbconn = psycopg2.connect(dbname='db', user='postgres', password='root', host='localhost')
+#dbconn = psycopg2.connect(dbname='db', user='postgres', password='root', host='antonchristensen.net')
+dbconn = psycopg2.connect(dbname='db', user='user', password='pass', host='localhost')
 
-n = 5
+updateFreq = 4
+
+n = 2
 lastN = []
 
 last = -1
@@ -22,8 +24,8 @@ while True:
 
     if len(lastN) > 0:
         average = sum(lastN) / len(lastN)
-        print(average)
+        print(average / updateFreq)
 
     last = new
 
-    time.sleep(1)
+    time.sleep(updateFreq)

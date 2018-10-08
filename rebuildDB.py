@@ -1,5 +1,7 @@
 from DebugService import DebugService
-from HorsePostgresDB import HorsePostgresDB
+from HorsePostgresDB import HorseDB
+# from HorseSqliteDB import HorseDB
+# from HorseMySQLDB import HorseDB
 
 dbgservice = DebugService()
-db = HorsePostgresDB(dbgservice, True)
+db = HorseDB(dbgservice, True)
