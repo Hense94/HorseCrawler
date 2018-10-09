@@ -1,56 +1,36 @@
 """
-Abstractions over the use of the HorseCrawler database
+Abstractions over the use of the Crawler database
 """
 
 from urllib.parse import urlparse
 import json
 import time
-import psycopg2
-import psycopg2.extras
+import sqlite3
 
-
-class HorsePostgresDB:
-    def __init__(self, debugService, dropDB=False):
+class HorseDB:
+    def __init__(self, debugService):
         self.debugService = debugService
         self.dbconn = self.getDatabaseConn()
 
-        if dropDB:
-            self.rebuildDatabase()
-        else:
-            if not self.databaseExists():
-                self.rebuildDatabase()
+        if not self.databaseExists():
+            self.createDatabase()
 
     @staticmethod
     def getDatabaseConn():
-        return psycopg2.connect(dbname='db', user='postgres', password='root', host='antonchristensen.net')
-        # return psycopg2.connect(dbname='db', user='postgres', password='root', host='172.0.0.1')
+        return sqlite3.connect('db.sqlite3')
 
     def tableExists(self, tableName):
         c = self.dbconn.cursor()
-        c.execute("SELECT * FROM information_schema.tables WHERE table_name=%s;", (tableName,))
+        c.execute("SELECT name FROM sqlite_master WHERE type='table' AND name=?;", (tableName,))
 
         return len(c.fetchall()) > 0
-
-    def dropTable(self, tableName):
-        c = self.dbconn.cursor()
-        c.execute("DROP TABLE "+tableName+";")
-        self.dbconn.commit()
-
-    def rebuildDatabase(self):
-        tables = ['pages', 'hosts', 'q', 'linktable', 'revindex']
-        for t in tables:
-            if self.tableExists(t):
-                self.dropTable(t)
-
-        self.createDatabase()
+        
 
     def databaseExists(self):
-        tables = ['pages', 'hosts', 'q', 'linktable', 'revindex']
-        for t in tables:
-            if not self.tableExists(t):
-                return False
+        return self.tableExists('pages') and self.tableExists('hosts') and self.tableExists('q') and self.tableExists('linkTable') and self.tableExists('revIndex')
 
-        return True
+    def deleteDatabase(self):
+        pass
 
     def createDatabase(self):
         self.debugService.add('INFO', 'Creating database')
@@ -58,46 +38,44 @@ class HorsePostgresDB:
         c = self.dbconn.cursor()
         c.execute(''' 
             CREATE TABLE pages (
-                id            SERIAL    NOT NULL PRIMARY KEY  UNIQUE,
-                host_id       INT       NOT NULL,
-                url           VARCHAR   NOT NULL,
-                document      TEXT      NOT NULL,
-                lang          VARCHAR(2) NOT NULL,
-                last_visited  NUMERIC   NOT NULL
+                id            INTEGER       NOT NULL PRIMARY KEY AUTOINCREMENT UNIQUE,
+                host_id       INTEGER       NOT NULL,
+                url           TEXT          NOT NULL,
+                document      TEXT          NOT NULL,
+                lang          TEXT          NOT NULL,
+                last_visited  NUMERIC       NOT NULL
             );
         ''')
-
         c.execute(''' 
             CREATE TABLE hosts (
-                id                      SERIAL  NOT NULL PRIMARY KEY UNIQUE,
-                host                    VARCHAR NOT NULL UNIQUE,
+                id                      INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT UNIQUE,
+                host                    TEXT    NOT NULL UNIQUE,
                 last_visited            NUMERIC NOT NULL,
-                disallow_list           VARCHAR NOT NULL,
+                disallow_list           TEXT    NOT NULL,
                 disallow_list_updated   NUMERIC NOT NULL
             );
         ''')
-
         c.execute(''' 
             CREATE TABLE q (
-                id        SERIAL    NOT NULL PRIMARY KEY UNIQUE,
-                host_id   INT       NOT NULL,
-                url       VARCHAR   NOT NULL
+                id        INTEGER   NOT NULL PRIMARY KEY AUTOINCREMENT UNIQUE,
+                host_id   INTEGER   NOT NULL,
+                url       TEXT      NOT NULL
             );
         ''')
 
         c.execute(''' 
-            CREATE TABLE linktable (
-                from_page_id  INT       NOT NULL,
-                to_page_url   VARCHAR   NOT NULL,
+            CREATE TABLE linkTable (
+                from_page_id  INTEGER   NOT NULL,
+                to_page_url   TEXT      NOT NULL,
                 PRIMARY KEY (from_page_id, to_page_url)
             );
         ''')
 
         c.execute(''' 
-            CREATE TABLE revindex (
-                id        SERIAL    NOT NULL PRIMARY KEY UNIQUE,
-                term      VARCHAR   NOT NULL,
-                page_id   INT       NOT NULL
+            CREATE TABLE revIndex (
+                id        INTEGER   NOT NULL PRIMARY KEY AUTOINCREMENT UNIQUE,
+                term      TEXT      NOT NULL,
+                page_id   INTEGER   NOT NULL
             );
         ''')
 
@@ -107,12 +85,12 @@ class HorsePostgresDB:
 
     def isPageInTheDB(self, url):
         c = self.dbconn.cursor()
-        c.execute('SELECT COUNT(*) FROM pages WHERE url = %s', (url,))
+        c.execute('SELECT COUNT(*) FROM pages WHERE url = ?', (url,))
         return c.fetchone()[0] > 0
 
     def isPageOld(self, url):
         c = self.dbconn.cursor()
-        c.execute('SELECT last_visited FROM pages WHERE url = %s', (url,))
+        c.execute('SELECT last_visited FROM pages WHERE url = ?', (url,))
         last_visited = c.fetchone()[0]
         return last_visited < time.time() - 604800
 
@@ -120,7 +98,7 @@ class HorsePostgresDB:
         parsedUrl = urlparse(url)
 
         c = self.dbconn.cursor()
-        c.execute('SELECT * FROM hosts WHERE host = %s', (parsedUrl.netloc,))
+        c.execute('SELECT * FROM hosts WHERE host = ?', (parsedUrl.netloc,))
         results = c.fetchall()
 
         if len(results) == 0:
@@ -134,26 +112,25 @@ class HorsePostgresDB:
 
         c = self.dbconn.cursor()
 
+        c.execute('BEGIN;')
+
         try:
             if self.getHost(url) is None:
                 c.execute(
-                    'INSERT INTO hosts (host, last_visited, disallow_list, disallow_list_updated) VALUES (%s, %s, %s, %s)',
+                    'INSERT INTO hosts (host, last_visited, disallow_list, disallow_list_updated) VALUES (?, ?, ?, ?)',
                     (parsedUrl.netloc, now, "", 0))
             else:
-                c.execute('UPDATE hosts SET last_visited = %s WHERE host = %s', (now, parsedUrl.netloc))
-
-            self.dbconn.commit()
-        except psycopg2.InternalError:
+                    c.execute('UPDATE hosts SET last_visited = ? WHERE host = ?', (now, parsedUrl.netloc))
+                    self.dbconn.commit()
+        except sqlite3.OperationalError as e:
             pass
 
-    def getPageId(self, url):
+    def getPage(self, url):
         c = self.dbconn.cursor()
-        c.execute('SELECT * FROM pages WHERE url = %s', (url,))
+        c.execute('SELECT * FROM pages WHERE url = ?', (url,))
         results = c.fetchall()
-
         if len(results) == 0:
             return None
-
         return results[0]
 
     def insertPage(self, url, doc, lang):
@@ -161,55 +138,51 @@ class HorsePostgresDB:
         hostId = self.getHost(url)[0]
 
         c = self.dbconn.cursor()
-        c.execute('INSERT INTO pages (host_id, url, document, lang, last_visited) VALUES (%s, %s, %s, %s, %s) RETURNING id;',
-                  (hostId, url, doc, lang, now,))
+        c.execute('INSERT INTO pages (host_id, url, document, last_visited, lang) VALUES (?, ?, ?, ?, ?)',
+                  (hostId, url, doc, now, lang))
         self.dbconn.commit()
-
-        return c.fetchone()[0]
 
     def updatePage(self, url, doc, lang):
         now = time.time()
         c = self.dbconn.cursor()
-        c.execute('UPDATE pages SET last_visited = %s, document = %s, lang = %s WHERE url = %s', (now, doc, lang, url))
+        c.execute('UPDATE pages SET last_visited = ?, document = ?, lang = ? WHERE url = ?', (now, doc, url, lang))
         self.dbconn.commit()
 
-    def updateLinktable(self, from_page_id, links):
+    def updateLinkTable(self, url, links):
+        page = self.getPage(url)
+        from_page_id = page[0]
+
         c = self.dbconn.cursor()
-        c.execute('DELETE FROM linktable WHERE from_page_id = %s', (from_page_id,))
+        c.execute('DELETE FROM linkTable WHERE from_page_id = ?', (from_page_id,))
         self.dbconn.commit()
 
-        params = [(from_page_id, link) for link in links]
-
-        psycopg2.extras.execute_values(c, 'INSERT INTO linktable (from_page_id, to_page_url) VALUES %s', params, page_size=1000)
-
+        params = list(map(lambda link: (from_page_id, link), links))
+        c.executemany('INSERT INTO linkTable VALUES (?, ?)', params)
         self.dbconn.commit()
 
-    def updateRevindex(self, page_id, tokens):
+    def updateRevIndex(self, url, tokens):
+        page = self.getPage(url)
+        page_id = page[0]
+
         c = self.dbconn.cursor()
-        c.execute('DELETE FROM revindex WHERE page_id = %s', (page_id,))
+        c.execute('DELETE FROM revIndex WHERE page_id = ?', (page_id,))
         self.dbconn.commit()
-
-        params = [(page_id, token) for token in tokens]
-
-        psycopg2.extras.execute_values(c, 'INSERT INTO revindex (page_id, term) VALUES %s', params, page_size=1000)
-
+        params = list(map(lambda token: (page_id, token), tokens))
+        c.executemany('INSERT INTO revIndex (page_id, term) VALUES (?, ?)', params)
         self.dbconn.commit()
 
     def insertOrUpdatePage(self, url, doc, normalized_outbound_urls, lang, tokens):
         self.insertOrUpdateHost(url)
-        pageId = self.getPageId(url)
-
-        if pageId is None:
-            pageId = self.insertPage(url, doc, lang)
+        if self.getPage(url) is None:
+            self.insertPage(url, doc, lang)
         else:
             self.updatePage(url, doc, lang)
-
-        self.updateLinktable(pageId, normalized_outbound_urls)
-        self.updateRevindex(pageId, tokens)
+        self.updateLinkTable(url, normalized_outbound_urls)
+        self.updateRevIndex(url, tokens)
 
     def isInQueue(self, url):
         c = self.dbconn.cursor()
-        c.execute('SELECT COUNT(*) FROM q WHERE url = %s', (url,))
+        c.execute('SELECT COUNT(*) FROM q WHERE url = ?', (url,))
         results = c.fetchone()
         return results[0] > 0
 
@@ -230,7 +203,7 @@ class HorsePostgresDB:
         encodedList = json.dumps(disallowedList)
 
         c = self.dbconn.cursor()
-        c.execute('UPDATE hosts SET disallow_list = %s, disallow_list_updated = %s WHERE host = %s',
+        c.execute('UPDATE hosts SET disallow_list = ?, disallow_list_updated = ? WHERE host = ?',
                   (encodedList, now, host,))
         self.dbconn.commit()
 
@@ -244,7 +217,7 @@ class HorsePostgresDB:
                 SELECT * FROM q 
                 JOIN hosts AS h 
                     ON q.host_id = h.id 
-                WHERE h.last_visited < %s 
+                WHERE h.last_visited < ? 
                 ORDER BY q.id 
                 ASC 
                 LIMIT 1;''', ((now - hostRestitutionTimeInSeconds),))
@@ -256,13 +229,16 @@ class HorsePostgresDB:
                 c.execute('SELECT * FROM q ORDER BY id ASC LIMIT 1;')
                 row = c.fetchone()
 
-            c.execute('DELETE FROM q WHERE id = %s', (row[0],))
+
+            c.execute('DELETE FROM q WHERE id = ?', (row[0],))
             self.dbconn.commit()
-
-            if c.rowcount == 1:
+            
+            if(c.rowcount == 1):
                 return row[2]
+                
+            
 
-            self.debugService.add('WARNING', 'Item was already removed from queueue')
+
 
     def qSize(self):
         c = self.dbconn.cursor()
@@ -278,5 +254,5 @@ class HorsePostgresDB:
         hostId = host[0]
 
         c = self.dbconn.cursor()
-        c.execute('INSERT INTO q (url, host_id) VALUES (%s, %s)', (url, hostId))
+        c.execute('INSERT INTO q (url, host_id) VALUES (?, ?)', (url, hostId))
         self.dbconn.commit()

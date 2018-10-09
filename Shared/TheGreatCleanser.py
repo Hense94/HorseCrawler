@@ -1,7 +1,7 @@
 import re
 from html import unescape
 import enchant
-from stemmer import PorterStemmer
+from Shared.stemmer import PorterStemmer
 
 
 class TheGreatCleanser:
@@ -172,7 +172,6 @@ class TheGreatCleanser:
 
         tokenList = TheGreatCleanser.removeStopwordsByLang(tokenList, lang)
 
-        if lang == 'EN':
-            tokenList = list(map(TheGreatCleanser.stemmer.stem, tokenList))
+        tokenList = list(map(TheGreatCleanser.stemmer.stem, tokenList))
 
         return lang, tokenList

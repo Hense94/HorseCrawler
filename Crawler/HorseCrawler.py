@@ -1,5 +1,5 @@
 """
-HorseCrawler implementation
+Crawler implementation
 """
 
 from urllib.error import HTTPError, URLError
@@ -8,24 +8,24 @@ import urllib.request
 import re
 from ssl import CertificateError
 from socket import timeout
-from Robert import Robert
-# from HorseSqliteDB import HorseSqliteDB
-from HorsePostgresDB import HorsePostgresDB
-from HorseQueue import HorseQueue
-from TheGreatCleanser import TheGreatCleanser
+from Crawler.Robert import Robert
+# from HorseSqliteDB import HorseDB
+from Crawler.HorsePostgresDB import HorseDB
+# from HorseMySQLDB import HorseDB
+from Crawler.HorseQueue import HorseQueue
+from Shared.TheGreatCleanser import TheGreatCleanser
 
 
 class HorseCrawler:
     """
-    HorseCrawler will crawl the entire web.
+    Crawler will crawl the entire web.
     One page at time or untill it's on every
     Robert.txt page there is.
     """
     def __init__(self, seedUrls, debugService):
         self.debugService = debugService
 
-        self.horse_db = HorsePostgresDB(debugService)
-        # self.horse_db = HorseSqliteDB(debugService)
+        self.horse_db = HorseDB(debugService)
         self.queue = HorseQueue(self.horse_db, debugService)
         for url in seedUrls:
             self.addToQueue(url)
@@ -74,7 +74,7 @@ class HorseCrawler:
         # Are we allowed?
         r = Robert('HorseBot', url, self.horse_db, self.debugService)
         if not r.canAccessPath(url):
-            self.debugService.add('ERROR', 'Not allowed at {}'.format(url))
+            self.debugService.add('WARNING', 'Not allowed at {}'.format(url))
             return
 
         # Make the request
@@ -85,22 +85,21 @@ class HorseCrawler:
         try:
             html = doc.read().decode('utf-8')
         except (UnicodeDecodeError, UnicodeError):
-            self.debugService.add('ERROR', 'Failed to read {} (reason: encoding error)'.format(url))
+            self.debugService.add('WARNING', 'Failed to read {} (reason: encoding error)'.format(url))
             return
         except timeout:
-            self.debugService.add('ERROR', 'Failed to read {} (reason: Timeout)'.format(url))
+            self.debugService.add('WARNING', 'Failed to read {} (reason: Timeout)'.format(url))
             return
-
 
         lang, tokenList = TheGreatCleanser.cleanse(html)
         if lang == "NaL":
-            self.debugService.add("INFO", "NaL: {}".format(url))
+            self.debugService.add("WARNING", "NaL: {}".format(url))
             return
 
         normalizedUrls = list(set(self.normalizeUrls(url, self.extractLinks(html))))
         self.debugService.add('DOWNLOAD', 'Adding {}'.format(url))
 
-        self.horse_db.insertOrUpdatePage(url, html, normalizedUrls, lang, tokenList)
+        self.horse_db.insertOrUpdatePage(url, normalizedUrls, lang, tokenList)
         self._apply(self.addToQueue, normalizedUrls)
 
     def addToQueue(self, url):
@@ -112,20 +111,21 @@ class HorseCrawler:
 
         try:
             file = urllib.request.urlopen(request, timeout=1)
+            self.horse_db.updateHostVisitTime(url)
         except HTTPError as e:
-            self.debugService.add('ERROR', 'Server couldn\'t fulfill the request for {} (code {})'.format(url, e.code))
+            self.debugService.add('WARNING', 'Server couldn\'t fulfill the request for {} (code {})'.format(url, e.code))
             return None
         except URLError as e:
-            self.debugService.add('ERROR', 'Failed to reach {} (reason: {})'.format(url, e.reason))
+            self.debugService.add('WARNING', 'Failed to reach {} (reason: {})'.format(url, e.reason))
             return None
         except timeout:
-            self.debugService.add('ERROR', 'Failed to reach {} (reason: timeout)'.format(url))
+            self.debugService.add('WARNING', 'Failed to reach {} (reason: timeout)'.format(url))
             return None
         except CertificateError:
-            self.debugService.add('ERROR', 'Failed to read {} (reason: SSL error)'.format(url))
+            self.debugService.add('WARNING', 'Failed to read {} (reason: SSL error)'.format(url))
             return None
         except (UnicodeDecodeError, UnicodeError):
-            self.debugService.add('ERROR', 'Failed to read {} (reason: encoding error)'.format(url))
+            self.debugService.add('WARNING', 'Failed to read {} (reason: encoding error)'.format(url))
             return None
         else:
             return file
@@ -133,7 +133,7 @@ class HorseCrawler:
     def shouldAddToQueue(self, url):  # TODO: Implement more
         # Is it a resource?
         if self.is_resource_url(url):
-            self.debugService.add('INFO', '{} is probably some stupid format which we shouldn\'t read'.format(url))
+            self.debugService.add('WARNING', '{} is probably some stupid format which we shouldn\'t read'.format(url))
             return False
 
         # Is it already in the queue?
@@ -141,12 +141,9 @@ class HorseCrawler:
             self.debugService.add('INFO', '{} is already in the queue'.format(url))
             return False
 
-        # Has it already been crawled?
-        if self.horse_db.isPageInTheDB(url):
-            # When?
-            isOld = self.horse_db.isPageOld(url)
-            if not isOld: 
-                self.debugService.add('INFO', '{} is already in the DB and crawled recently'.format(url))
+        # Has it been crawled recently?
+        if self.horse_db.hasUrlBeenCrawledRecently(url):
+            self.debugService.add('INFO', '{} is already in the DB and crawled recently'.format(url))
+            return False
 
-            return isOld
         return True
