@@ -1,5 +1,5 @@
 """
-HorseCrawler implementation
+Crawler implementation
 """
 
 from urllib.error import HTTPError, URLError
@@ -8,17 +8,17 @@ import urllib.request
 import re
 from ssl import CertificateError
 from socket import timeout
-from Robert import Robert
+from Crawler.Robert import Robert
 # from HorseSqliteDB import HorseDB
-from HorsePostgresDB import HorseDB
+from Crawler.HorsePostgresDB import HorseDB
 # from HorseMySQLDB import HorseDB
-from HorseQueue import HorseQueue
-from TheGreatCleanser import TheGreatCleanser
+from Crawler.HorseQueue import HorseQueue
+from Shared.TheGreatCleanser import TheGreatCleanser
 
 
 class HorseCrawler:
     """
-    HorseCrawler will crawl the entire web.
+    Crawler will crawl the entire web.
     One page at time or untill it's on every
     Robert.txt page there is.
     """

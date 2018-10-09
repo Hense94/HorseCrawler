@@ -1,7 +1,7 @@
 import signal
 import time
-from HorseCrawler import HorseCrawler
-from DebugService import DebugService
+from Crawler.HorseCrawler import HorseCrawler
+from Crawler.DebugService import DebugService
 
 
 def exit_gracefully(signum, frame):

@@ -1,5 +1,5 @@
 """
-Abstractions over the use of the HorseCrawler database
+Abstractions over the use of the Crawler database
 """
 
 from urllib.parse import urlparse
