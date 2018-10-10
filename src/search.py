@@ -3,14 +3,14 @@
 import math
 
 import numpy as np
-from HorseSearcher.SearchDB import SearchDB
-from Shared.TheGreatCleanser import TheGreatCleanser
-
+from SearchDB import SearchDB
+from TheGreatCleanser import TheGreatCleanser
+import sys
 
 class HorseSearcher:
     def __init__(self):
         self.db = SearchDB()
-        self.query = 'ingen test'
+        self.query = ''
 
     def cleanQuery(self, query):
         query = query.lower()
@@ -57,14 +57,23 @@ class HorseSearcher:
         for document in documents:
             result[document] = []
             for term in queryTerms:
-                result[document].append(self.calculateScore(term, document))
+                result[document].append(next((float(x[1]) for x in self.db.cache[term] if x[0] == document), 0))
 
             result[document] = self.angle_between(queryVector, result[document])
 
         temp = [(d, s) for (d, s) in result.items()]
-        temp.sort(key=lambda item: item[1], reverse=True)
+        temp.sort(key=lambda item: item[1], reverse=False)
+
+        temp = self.db.fillQueryResult(temp)
         return temp
+
+    def angle_between(self, v1, v2_u):
+        v1_u = v1 / np.linalg.norm(v1)
+        # v2_u = v2 / np.linalg.norm(v2)
+        return np.arccos(np.clip(np.dot(v1_u, v2_u), -1.0, 1.0))
 
 
 search = HorseSearcher()
-print(search.search('2 antonchristensen'))
+results = search.search(' '.join(sys.argv[1:]))
+for res in results:
+    print(res)

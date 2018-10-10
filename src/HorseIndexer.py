@@ -105,11 +105,6 @@ class HorseIndexer:
 
         return math.log10(N / df)
 
-    def angle_between(self, v1, v2):
-        v1_u = v1 / np.linalg.norm(v1)
-        v2_u = v2 / np.linalg.norm(v2)
-        return np.arccos(np.clip(np.dot(v1_u, v2_u), -1.0, 1.0))
-
     def getTermFrequency(self, term, document):
         return next((x[1] for x in self.cache[term] if x[0] == document), 0)
 

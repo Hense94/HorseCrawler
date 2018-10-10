@@ -16,16 +16,32 @@ class SearchDB:
     def getListOfRelevantDocuments(self, term):
         if term not in self.cache:
             c = self.dbconn.cursor()
-            c.execute('SELECT page_id, frequency FROM index WHERE term = (%s);', (term,))
+            c.execute('SELECT page_id, tf_idf/pages.term_vec_len FROM index JOIN pages ON pages.id = index.page_id WHERE term = (%s);', (term,))
             self.cache[term] = c.fetchall()
 
         return list(map(lambda result: result[0], self.cache[term]))
 
-    def getTermFrequency(self, term, document):
-        return next((x[1] for x in self.cache[term] if x[0] == document), 0)
+    def fillQueryResult(self, searchResults):
+        c = self.dbconn.cursor()
+        c.execute('select id, url from pages WHERE id IN({});'.format((','.join(map(lambda q: str(q[0]), searchResults)))))
+        fillerData = c.fetchall()
 
-    def getDocumentFrequency(self, term):
-        return len(self.cache[term])
+        filledSearchRessults = []
+        for result in searchResults:
+            for data in fillerData:
+                if(data[0] == result[0]):
+                    filledSearchRessults.append((data[1], result[1]))
+                    break
+
+
+        return filledSearchRessults
+
+    # def cacheTermVectors(self, documents):
+    #     c = self.dbconn.cursor()
+    #     c.execute('SELECT page_id, tf_idf FROM index WHERE page_id IN ({});'.format((','.join(map(str, documents)))))
+    #     index = c.fetchall()
+    #     for
+
 
     def getNumberOfDocuments(self):
         if self.nDocs < 0:
