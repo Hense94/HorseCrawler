@@ -1,7 +1,7 @@
 import re
 from html import unescape
 import enchant
-from Shared.stemmer import PorterStemmer
+from stemmer import PorterStemmer
 
 
 class TheGreatCleanser:

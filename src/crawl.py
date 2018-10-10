@@ -1,7 +1,9 @@
+#!/usr/bin/env python3
+
 import signal
 import time
-from Crawler.HorseCrawler import HorseCrawler
-from Crawler.DebugService import DebugService
+from HorseCrawler import HorseCrawler
+from DebugService import DebugService
 
 
 def exit_gracefully(signum, frame):

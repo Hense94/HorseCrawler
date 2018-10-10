@@ -1,5 +1,7 @@
-from Crawler.DebugService import DebugService
-from Crawler.HorsePostgresDB import HorseDB
+#!/usr/bin/env python3
+
+from DebugService import DebugService
+from HorsePostgresDB import HorseDB
 # from HorseSqliteDB import HorseDB
 # from HorseMySQLDB import HorseDB
 

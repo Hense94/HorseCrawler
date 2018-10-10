@@ -58,10 +58,12 @@ class HorseDB:
         c = self.dbconn.cursor()
         c.execute(''' 
             CREATE TABLE pages (
-                id            SERIAL    NOT NULL PRIMARY KEY  UNIQUE,
-                url           VARCHAR   NOT NULL,
+                id            SERIAL     NOT NULL PRIMARY KEY  UNIQUE,
+                url           VARCHAR    NOT NULL,
                 lang          VARCHAR(2) NOT NULL,
-                last_visited  NUMERIC   NOT NULL
+                document      TEXT       NOT NULL,
+                last_visited  NUMERIC    NOT NULL,
+                term_vec_len  NUMERIC    DEFAULT NULL
             );
         ''')
 
@@ -96,7 +98,8 @@ class HorseDB:
                 id        SERIAL    NOT NULL PRIMARY KEY UNIQUE,
                 term      VARCHAR   NOT NULL,
                 frequency INT       NOT NULL,
-                page_id   INT       NOT NULL
+                page_id   INT       NOT NULL,
+                tf_idf    NUMERIC   NOT NULL   
             );
         ''')
 
@@ -166,14 +169,12 @@ class HorseDB:
         pageId = self.getPageId(url)
 
         if pageId is None:
-            pageId = self.insertPage(url, lang)
+            pageId = self.insertPage(url, lang, tokens)
         else:
-            self.updatePage(pageId, lang)
+            self.updatePage(pageId, lang, tokens)
             self.deleteLinks(pageId)
-            self.deleteIndex(pageId)
 
         self.insertLinks(pageId, normalized_outbound_urls)
-        self.insertIndex(pageId, tokens)
 
     def getPageId(self, url):
         c = self.dbconn.cursor()
@@ -185,20 +186,20 @@ class HorseDB:
 
         return results[0]
 
-    def insertPage(self, url, lang):
+    def insertPage(self, url, lang, tokens):
         now = time.time()
 
         c = self.dbconn.cursor()
-        c.execute('INSERT INTO pages (url, lang, last_visited) VALUES (%s, %s, %s) RETURNING id;', (url, lang, now,))
+        c.execute('INSERT INTO pages (url, lang, last_visited, document) VALUES (%s, %s, %s, %s) RETURNING id;', (url, lang, now, json.dumps(tokens),))
         self.dbconn.commit()
 
         return c.fetchone()[0]
 
-    def updatePage(self, page_id, lang):
+    def updatePage(self, page_id, lang, tokens):
         now = time.time()
 
         c = self.dbconn.cursor()
-        c.execute('UPDATE pages SET last_visited = %s, lang = %s WHERE id = %s', (now, lang, page_id))
+        c.execute('UPDATE pages SET last_visited = %s, lang = %s, document = %s WHERE id = %s', (now, lang, json.dumps(tokens), page_id,))
         self.dbconn.commit()
 
     def deleteLinks(self, from_page_id):

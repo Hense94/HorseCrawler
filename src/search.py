@@ -1,3 +1,5 @@
+#!/usr/bin/env python3
+
 import math
 
 import numpy as np
@@ -63,34 +65,6 @@ class HorseSearcher:
         temp.sort(key=lambda item: item[1], reverse=True)
         return temp
 
-    def calculateScore(self, term, document):
-        tfp = self.calculateTermFrequencyPrime(term, document)
-        idf = self.calculateInverseDocumentFrequency(term)
-
-        return tfp * idf
-
-    def calculateTermFrequencyPrime(self, term, document):
-        tf = self.db.getTermFrequency(term, document)
-        if tf > 0:
-            return 1 + math.log10(tf)
-        else:
-            return 0
-
-    def calculateInverseDocumentFrequency(self, term):
-        df = self.db.getDocumentFrequency(term)
-        N = self.db.getNumberOfDocuments()
-
-        return math.log10(N / df)
-
-    def combineResults(self, old, new):
-        if len(old) == 0:
-            old = new
-
-
-    def angle_between(self, v1, v2):
-        v1_u = v1 / np.linalg.norm(v1)
-        v2_u = v2 / np.linalg.norm(v2)
-        return np.arccos(np.clip(np.dot(v1_u, v2_u), -1.0, 1.0))
 
 search = HorseSearcher()
 print(search.search('2 antonchristensen'))

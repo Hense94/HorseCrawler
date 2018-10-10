@@ -4,16 +4,17 @@ Crawler implementation
 
 from urllib.error import HTTPError, URLError
 from urllib.parse import urlparse
+from http.client  import RemoteDisconnected
 import urllib.request
 import re
 from ssl import CertificateError
 from socket import timeout
-from Crawler.Robert import Robert
+from Robert import Robert
 # from HorseSqliteDB import HorseDB
-from Crawler.HorsePostgresDB import HorseDB
+from HorsePostgresDB import HorseDB
 # from HorseMySQLDB import HorseDB
-from Crawler.HorseQueue import HorseQueue
-from Shared.TheGreatCleanser import TheGreatCleanser
+from HorseQueue import HorseQueue
+from TheGreatCleanser import TheGreatCleanser
 
 
 class HorseCrawler:
@@ -122,6 +123,9 @@ class HorseCrawler:
             self.debugService.add('WARNING', 'Failed to reach {} (reason: timeout)'.format(url))
             return None
         except CertificateError:
+            self.debugService.add('WARNING', 'Failed to read {} (reason: SSL error)'.format(url))
+            return None
+        except RemoteDisconnected:
             self.debugService.add('WARNING', 'Failed to read {} (reason: SSL error)'.format(url))
             return None
         except (UnicodeDecodeError, UnicodeError):
