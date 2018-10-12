@@ -254,49 +254,39 @@ class HorseDB:
 
         while True:
             c.execute('''
-                DELETE
+                SELECT * 
                 FROM q
-                WHERE q.id = (
-                    SELECT q.id
-                    FROM q
-                        LEFT JOIN
-                    hosts AS h
-                    ON q.host = h.host
-                        LEFT JOIN pages AS p
-                    ON q.url = p.url
-                    WHERE h.last_visited < %s AND (p.last_visited IS NULL OR p.last_visited < %s)
-                    ORDER BY q.id ASC NULLS FIRST
-                    LIMIT 1
-                ) RETURNING *;''', (now - hostRestitutionTimeInSeconds, now - 604800))
+                    LEFT JOIN
+                hosts AS h
+                ON q.host = h.host
+                    LEFT JOIN pages AS p
+                ON q.url = p.url
+                WHERE h.last_visited < %s AND (p.last_visited IS NULL OR p.last_visited < %s)
+                ORDER BY q.id ASC NULLS FIRST
+                LIMIT 1''', (now - hostRestitutionTimeInSeconds, now - 604800))
             row = c.fetchone()
 
-            if row is not None:
-                print('yay')
-                return row[1]
-            else:
-                self.debugService.add('WARNING', 'Failed to retrieve anything from queue. Removing host timeout requirement!')
-                c.execute('''
-                    DELETE
-                    FROM q
-                    WHERE q.id = (
-                        SELECT q.id
-                        FROM q
-                            LEFT JOIN
-                        hosts AS h
-                        ON q.host = h.host
-                            LEFT JOIN pages AS p
-                        ON q.url = p.url
-                        WHERE (p.last_visited IS NULL OR p.last_visited < %s)
-                        ORDER BY q.id ASC NULLS FIRST
-                        LIMIT 1
-                    ) RETURNING *;''', (now - 604800,))
+            if row is None:
+                self.debugService.add('QUEUE', 'We visited everything recently... Lets just visit something again and not care about being so fucking polite')
+                c.execute(
+                    'SELECT * FROM q LEFT JOIN hosts AS h ON q.host = h.host ORDER BY last_visited ASC NULLS FIRST LIMIT 1;')
                 row = c.fetchone()
 
             if row is not None:
-                return row[1]
+                c.execute('DELETE FROM q WHERE id = %s', (row[0],))
+                self.dbconn.commit()
+
+                if c.rowcount == 1:
+                    return row[1]
+                else:
+                    self.debugService.add('QUEUE', 'Item was already removed from queueue')
             else:
-                self.debugService.add('DONE', 'Couldn\'t retrieve anything from queueue. Trying again in a second!')
-                time.sleep(1)
+                if self.qSize() > 0:
+                    self.debugService.add('QUEUE', 'Failed to get anything from queueue, waiting a bit...')
+                    time.sleep(0.2)
+                else:
+                    self.debugService.add('DONE', 'The web has been crawled. No more to see here.')
+                    return 'https://www.done.dk'
 
     def qSize(self):
         c = self.dbconn.cursor()

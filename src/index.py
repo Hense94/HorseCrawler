@@ -9,7 +9,6 @@ def timeTaken(func):
     func()
     return time.time() - start
 
-ds = DebugService(['DONE', 'DOWNLOAD', 'TIME'])
 ds = DebugService()
 
 indexer = HorseIndexer(ds)

@@ -1,22 +1,20 @@
-from urllib.parse import urlparse
 import json
 import math
-import time
 import psycopg2
 import psycopg2.extras
+
 
 class HorseIndexer:
     """docstring for HorseIndexer"""
     def __init__(self, debugService):
         self.debugService = debugService
-        self.dbconn = self.getDatabaseConn()
+        self.dbConn = self.getDatabaseConn()
         self.documentFreq = {}
-        self.nDocs = -1;
+        self.nDocs = -1
 
     @staticmethod
     def getDatabaseConn():
         return psycopg2.connect(dbname='db', user='user', password='pass', host='localhost')
-        return psycopg2.connect(dbname='db', user='postgres', password='root', host='antonchristensen.net')
 
     def run(self):
         self.deleteIndex()
@@ -30,7 +28,7 @@ class HorseIndexer:
         self.insertVectorLengths()
 
     def insertVectorLengths(self):
-        c = self.dbconn.cursor()
+        c = self.dbConn.cursor()
         c.execute("""
             UPDATE pages
             SET term_vec_len = idx.veclen
@@ -39,7 +37,7 @@ class HorseIndexer:
             ) AS idx(page_id, veclen)
             WHERE pages.id = idx.page_id;
         """)
-        self.dbconn.commit()
+        self.dbConn.commit()
 
     def buildDocumentFrequencyTable(self, docuements):
         for (_, tokens) in docuements:
@@ -48,7 +46,7 @@ class HorseIndexer:
                 self.documentFreq[token] = self.documentFreq.get(token, 0)+1
 
     def getAllPages(self):
-        c = self.dbconn.cursor()
+        c = self.dbConn.cursor()
         c.execute('SELECT id, document FROM pages')
         return list(
                     map(
@@ -58,7 +56,7 @@ class HorseIndexer:
                 )
 
     def getPageId(self, url):
-        c = self.dbconn.cursor()
+        c = self.dbConn.cursor()
         c.execute('SELECT * FROM pages WHERE url = %s', (url,))
         results = c.fetchone()
 
@@ -68,10 +66,10 @@ class HorseIndexer:
         return results[0]
 
     def deleteIndex(self):
-        c = self.dbconn.cursor()
+        c = self.dbConn.cursor()
         c.execute('DELETE FROM index')
         c.execute('ALTER SEQUENCE index_id_seq RESTART WITH 1')
-        self.dbconn.commit()
+        self.dbConn.commit()
 
     def createIndex(self, page_id, tokens):
         counts = dict()
@@ -79,20 +77,19 @@ class HorseIndexer:
             counts[term] = counts.get(term, 0) + 1
 
         params = counts.items()
-        params = [(page_id, pair[0], pair[1], self.calculateScore(pair, page_id)) for pair in params]
+        params = [(page_id, pair[0], pair[1], self.calculateScore(pair)) for pair in params]
 
-        c = self.dbconn.cursor()
+        c = self.dbConn.cursor()
         psycopg2.extras.execute_values(c, 'INSERT INTO index (page_id, term, frequency, tf_idf) VALUES %s', params, page_size=1000)
-        self.dbconn.commit()
+        self.dbConn.commit()
 
-
-    def calculateScore(self, term, document):
-        tfp = self.calculateTermFrequencyPrime(term, document)
+    def calculateScore(self, term):
+        tfp = self.calculateTermFrequencyPrime(term)
         idf = self.calculateInverseDocumentFrequency(term)
 
         return tfp * idf
 
-    def calculateTermFrequencyPrime(self, term, document):
+    def calculateTermFrequencyPrime(self, term):
         tf = term[1]
         if tf > 0:
             return 1 + math.log10(tf)
@@ -105,51 +102,8 @@ class HorseIndexer:
 
         return math.log10(N / df)
 
-    def angle_between(self, v1, v2):
-        v1_u = v1 / np.linalg.norm(v1)
-        v2_u = v2 / np.linalg.norm(v2)
-        return np.arccos(np.clip(np.dot(v1_u, v2_u), -1.0, 1.0))
-
-    def getTermFrequency(self, term, document):
-        return next((x[1] for x in self.cache[term] if x[0] == document), 0)
-
     def getDocumentFrequency(self, term):
         return self.documentFreq[term]
     
     def getNumberOfDocuments(self):
         return self.nDocs
-        # if self.nDocs < 0:
-        #     c = self.dbconn.cursor()
-        #     c.execute('SELECT COUNT(*) FROM pages;')
-        #     result = c.fetchone()
-
-        #     if result is None:
-        #         self.nDocs = 0
-        #     else:
-        #         self.nDocs = result[0]
-
-        # return self.nDocs
-"""
-    def getListOfRelevantDocuments(self, term):
-        if term not in self.cache:
-            c = self.dbconn.cursor()
-            c.execute('SELECT page_id, frequency FROM index WHERE term = (%s);', (term,))
-            self.cache[term] = c.fetchall()
-
-        return list(map(lambda result: result[0], self.cache[term]))
-
-
-
-    def getVocabSize(self):
-        if self.nTerms < 0:
-            c = self.dbconn.cursor()
-            c.execute('SELECT COUNT(DISTINCT term) FROM index;')
-            result = c.fetchone()
-
-            if result is None:
-                self.nTerms = 0
-            else:
-                self.nTerms = result[0]
-
-        return self.nTerms
-"""
