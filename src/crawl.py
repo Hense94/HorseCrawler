@@ -41,3 +41,4 @@ while running:
 
     ds.add('TIME', 'Last page took {:.2} seconds. Average across last {} pages: {:.2} ({:.2} pages per second)'.format(crawlTime, len(times), avg, 1 / avg))
 
+crawler.finish()

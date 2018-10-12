@@ -3,8 +3,8 @@
 import math
 
 import numpy as np
-from HorseSearcher.SearchDB import SearchDB
-from Shared.TheGreatCleanser import TheGreatCleanser
+from SearchDB import SearchDB
+from TheGreatCleanser import TheGreatCleanser
 
 
 class HorseSearcher:

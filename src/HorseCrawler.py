@@ -140,6 +140,7 @@ class HorseCrawler:
             self.debugService.add('WARNING', '{} is probably some stupid format which we shouldn\'t read'.format(url))
             return False
 
+        """
         # Is it already in the queue?
         if self.horse_db.isInQueue(url):
             self.debugService.add('INFO', '{} is already in the queue'.format(url))
@@ -149,5 +150,9 @@ class HorseCrawler:
         if self.horse_db.hasUrlBeenCrawledRecently(url):
             self.debugService.add('INFO', '{} is already in the DB and crawled recently'.format(url))
             return False
+        """
 
         return True
+
+    def finish(self):
+        self.queue.emptyInternalQueue()

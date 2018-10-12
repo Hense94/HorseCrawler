@@ -13,6 +13,7 @@ class HorseDB:
     def __init__(self, debugService, dropDB=False):
         self.debugService = debugService
         self.dbconn = self.getDatabaseConn()
+        self.disallowListCache = {}
 
         if dropDB:
             self.rebuildDatabase()
@@ -80,7 +81,7 @@ class HorseDB:
         c.execute(''' 
             CREATE TABLE q (
                 id        SERIAL    NOT NULL PRIMARY KEY UNIQUE,
-                url       VARCHAR   NOT NULL,
+                url       VARCHAR   NOT NULL UNIQUE,
                 host      VARCHAR   NOT NULL
             );
         ''')
@@ -108,21 +109,24 @@ class HorseDB:
         c.close()
 
     def getDisallowListIfValid(self, url):
-        parsedUrl = urlparse(url)
-        now = time.time()
-        oneWeek = 60 * 60 * 24 * 7
+        host = urlparse(url).netloc
+        if host not in self.disallowListCache:
+            now = time.time()
+            oneWeek = 60 * 60 * 24 * 7
 
-        c = self.dbconn.cursor()
-        c.execute('SELECT id, disallow_list, disallow_list_updated FROM hosts WHERE host = %s', (parsedUrl.netloc,))
-        results = c.fetchone()
+            c = self.dbconn.cursor()
+            c.execute('SELECT id, disallow_list, disallow_list_updated FROM hosts WHERE host = %s', (host,))
+            results = c.fetchone()
 
-        if results is None:
-            return None, None
+            if results is None:
+                return None, None
 
-        if results[2] > now - oneWeek:
-            return id, json.loads(results[1])
-        else:
-            return id, None
+            if results[2] > now - oneWeek:
+                self.disallowListCache[host] = id, json.loads(results[1])
+            else:
+                self.disallowListCache[host] = id, None
+
+        return self.disallowListCache[host]
 
     def insertHost(self, url):
         parsedUrl = urlparse(url)
@@ -131,7 +135,6 @@ class HorseDB:
 
         try:
             c.execute('INSERT INTO hosts (host, last_visited, disallow_list, disallow_list_updated) VALUES (%s, %s, %s, %s)', (parsedUrl.netloc, 0, '', 0))
-
             self.dbconn.commit()
         except psycopg2.InternalError:
             print('Does this ever happen?!?!?')
@@ -143,8 +146,11 @@ class HorseDB:
         host = urlparse(url).netloc
 
         c = self.dbconn.cursor()
-        c.execute('UPDATE hosts SET disallow_list = %s, disallow_list_updated = %s WHERE host = %s', (encodedList, now, host,))
+        c.execute('UPDATE hosts SET disallow_list = %s, disallow_list_updated = %s WHERE host = %s RETURNING id', (encodedList, now, host,))
         self.dbconn.commit()
+        host_id = c.fetchone()[0]
+
+        self.disallowListCache[host] = host_id, encodedList
 
     def updateHostVisitTime(self, url):
         now = time.time()
@@ -153,17 +159,6 @@ class HorseDB:
         c = self.dbconn.cursor()
         c.execute('UPDATE hosts SET last_visited = %s WHERE host = %s', (now, host,))
         self.dbconn.commit()
-
-    def hasUrlBeenCrawledRecently(self, url):
-        c = self.dbconn.cursor()
-        c.execute('SELECT last_visited FROM pages WHERE url = %s', (url,))
-
-        last_visited = c.fetchone()
-
-        if last_visited is None:
-            return False
-        else:
-            return last_visited[0] < time.time() - 604800
 
     def insertOrUpdatePage(self, url, normalized_outbound_urls, lang, tokens):
         pageId = self.getPageId(url)
@@ -241,7 +236,15 @@ class HorseDB:
         host = urlparse(url).netloc
 
         c = self.dbconn.cursor()
-        c.execute('INSERT INTO q (url, host) VALUES (%s, %s)', (url, host))
+        c.execute('INSERT INTO q (url, host) VALUES (%s, %s) ON CONFLICT DO NOTHING', (url, host))
+        self.dbconn.commit()
+
+    def massEnqueue(self, urls):
+        params = [(url, urlparse(url).netloc) for url in urls]
+
+        c = self.dbconn.cursor()
+        psycopg2.extras.execute_values(c, 'INSERT INTO q (url, host) VALUES %s ON CONFLICT DO NOTHING', params, page_size=1000)
+
         self.dbconn.commit()
 
     def dequeue(self):
@@ -251,33 +254,51 @@ class HorseDB:
 
         while True:
             c.execute('''
-                SELECT * FROM q 
-                LEFT JOIN hosts AS h 
-                    ON q.host = h.host 
-                WHERE h.last_visited < %s 
-                ORDER BY q.id 
-                ASC NULLS FIRST
-                LIMIT 1;''', ((now - hostRestitutionTimeInSeconds),))
+                DELETE
+                FROM q
+                WHERE q.id = (
+                    SELECT q.id
+                    FROM q
+                        LEFT JOIN
+                    hosts AS h
+                    ON q.host = h.host
+                        LEFT JOIN pages AS p
+                    ON q.url = p.url
+                    WHERE h.last_visited < %s AND (p.last_visited IS NULL OR p.last_visited < %s)
+                    ORDER BY q.id ASC NULLS FIRST
+                    LIMIT 1
+                ) RETURNING *;''', (now - hostRestitutionTimeInSeconds, now - 604800))
             row = c.fetchone()
 
-            if row is None:
-                if self.qSize() > 0:
-                    self.debugService.add('QUEUE', 'We visited everything recently... Lets just visit something again and not care about being so fucking polite')
-                    c.execute('SELECT * FROM q LEFT JOIN hosts AS h ON q.host = h.host ORDER BY last_visited ASC NULLS FIRST LIMIT 1;')
-                    row = c.fetchone()
-                else:
-                    self.debugService.add('DONE', 'The web has been crawled. No more to see here.')
-
-            c.execute('DELETE FROM q WHERE id = %s', (row[0],))
-            self.dbconn.commit()
-
-            if c.rowcount == 1:
+            if row is not None:
+                print('yay')
                 return row[1]
+            else:
+                self.debugService.add('WARNING', 'Failed to retrieve anything from queue. Removing host timeout requirement!')
+                c.execute('''
+                    DELETE
+                    FROM q
+                    WHERE q.id = (
+                        SELECT q.id
+                        FROM q
+                            LEFT JOIN
+                        hosts AS h
+                        ON q.host = h.host
+                            LEFT JOIN pages AS p
+                        ON q.url = p.url
+                        WHERE (p.last_visited IS NULL OR p.last_visited < %s)
+                        ORDER BY q.id ASC NULLS FIRST
+                        LIMIT 1
+                    ) RETURNING *;''', (now - 604800,))
+                row = c.fetchone()
 
-            self.debugService.add('QUEUE', 'Item was already removed from queueue')
+            if row is not None:
+                return row[1]
+            else:
+                self.debugService.add('DONE', 'Couldn\'t retrieve anything from queueue. Trying again in a second!')
+                time.sleep(1)
 
     def qSize(self):
         c = self.dbconn.cursor()
         c.execute('SELECT COUNT(*) FROM q;')
         return c.fetchone()[0]
-
