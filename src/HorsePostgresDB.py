@@ -64,7 +64,8 @@ class HorseDB:
                 lang          VARCHAR(2) NOT NULL,
                 document      TEXT       NOT NULL,
                 last_visited  NUMERIC    NOT NULL,
-                term_vec_len  NUMERIC    DEFAULT NULL
+                term_vec_len  NUMERIC    DEFAULT NULL,
+                rank          NUMERIC    DEFAULT NULL
             );
         ''')
 

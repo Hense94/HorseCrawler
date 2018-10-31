@@ -44,6 +44,7 @@ class HorseSearcher:
         return lang, tokenizedQuery
 
     def search(self, query):
+        alpha = 0.99
         lang, queryTerms = self.cleanQuery(query)
         queryVector = [1 for _ in range(len(queryTerms))]
         result = {}
@@ -53,18 +54,26 @@ class HorseSearcher:
             for document in self.db.getListOfRelevantDocuments(term):
                 documents.add(document)
 
+        print(documents)
+
         for document in documents:
-            result[document] = []
+            result[document[0]] = []
             for term in queryTerms:
-                result[document].append(next((float(x[1]) for x in self.db.cache[term] if x[0] == document), 0))
+                result[document[0]].append(next((float(x[1]) for x in self.db.cache[term] if x[0] == document[0]), 0))
 
-            result[document] = self.angle_between(queryVector, result[document])
+            result[document[0]] = self.angle_between(queryVector, result[document[0]])*alpha + document[1]*(1-alpha)
 
-        temp = [(d, s) for (d, s) in result.items()]
-        temp.sort(key=lambda item: item[1], reverse=True)
+        print(result)
+        result = [(d, s) for (d, s) in result.items()]
+        
+        # result = self.db.getRanks(result)
+        # print(result)
 
-        temp = self.db.fillQueryResult(temp)
-        return temp
+
+        result.sort(key=lambda item: item[1], reverse=True)
+
+        result = self.db.fillQueryResult(result)
+        return result
 
     def angle_between(self, v1, v2_u):
         v1_u = v1 / np.linalg.norm(v1)

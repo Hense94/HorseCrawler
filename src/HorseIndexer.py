@@ -2,6 +2,7 @@ import json
 import math
 import psycopg2
 import psycopg2.extras
+import numpy as np
 
 
 class HorseIndexer:
@@ -26,6 +27,90 @@ class HorseIndexer:
             self.createIndex(pageId, tokens)
 
         self.insertVectorLengths()
+
+        self.calculatePageRank()
+
+    def pagerank(self, M, eps=1.0e-8, d=0.85):
+        N = M.shape[1]
+        v = np.random.rand(N, 1)
+        v = v / np.linalg.norm(v, 1)
+        last_v = np.ones((N, 1), dtype=np.float32) * 100
+        M_hat = (d * M) + (((1 - d) / N) * np.ones((N, N), dtype=np.float32))
+        
+        while np.linalg.norm(v - last_v, 2) > eps:
+            last_v = v
+            v = np.matmul(M_hat, v)
+        return v
+
+    def getLinkData(self):
+        c = self.dbConn.cursor()
+            # SELECT (from_page_id - 1) as from_page_id, (pages.id - 1) as to_page_id
+            # FROM links LEFT JOIN pages ON to_page_url = url;
+        c.execute('''
+            SELECT (from_page_id - 1) as from_page_index, CASE WHEN id IS NULL THEN -1 ELSE id -1 END AS to_page_index
+            FROM links LEFT JOIN pages ON to_page_url = url;
+        ''')
+
+        # links [
+        #   1: 17
+        #   1: 18
+        #   2: 17
+        # ]
+
+        # _links {
+        #   1: [17,18]
+        # }
+        temp = c.fetchall()
+        links = {}
+        for x in temp:
+            links[x[0]] = links.get(x[0], [])
+            links[x[0]].append(x[1])
+
+        c.execute('''
+            SELECT (from_page_id - 1) as from_page_id, count(*)
+            FROM links
+            GROUP BY from_page_id
+            ORDER BY from_page_id ASC;
+        ''')
+        temp = c.fetchall()
+        outcount = {}
+        for x in temp:
+            outcount[x[0]] = x[1]
+
+
+        # TODO: fix outcount array
+
+        return (links, outcount)
+
+
+    def storeRideRanke(self, ranks):
+        c = self.dbConn.cursor()
+        psycopg2.extras.execute_values(c, 'UPDATE pages AS p SET rank = c.rank FROM (VALUES %s) AS c(id, rank) WHERE c.id = p.id', ranks, page_size=1000)
+        self.dbConn.commit()
+
+    def calculatePageRank(self):
+        (links, outcount) = self.getLinkData()
+        pageLinkGraph = np.zeros((self.nDocs+1, self.nDocs+1), dtype=np.float32)
+        for from_ in range(0, self.nDocs):
+            count = outcount.get(from_, 0)
+            if count == 0: 
+                continue
+            outprop = 1/count
+            remainder = 1
+            for to_ in links.get(from_, []) :
+                if to_ == -1: 
+                    continue
+                pageLinkGraph[to_,from_] = outprop
+                remainder-=outprop
+                pass
+            pageLinkGraph[-1,from_] = remainder
+
+        ranks = self.pagerank(pageLinkGraph, 0.001, 0.85)
+        ranks = ranks.flatten()[:-1]
+        rideranks = []
+        for i in range(0,self.nDocs):
+             rideranks.append((i+1, ranks[i]))
+        self.storeRideRanke(rideranks)
 
     def insertVectorLengths(self):
         c = self.dbConn.cursor()

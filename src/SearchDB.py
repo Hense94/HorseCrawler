@@ -16,10 +16,10 @@ class SearchDB:
     def getListOfRelevantDocuments(self, term):
         if term not in self.cache:
             c = self.dbconn.cursor()
-            c.execute('SELECT page_id, tf_idf/pages.term_vec_len FROM index JOIN pages ON pages.id = index.page_id WHERE term = (%s);', (term,))
+            c.execute('SELECT page_id, tf_idf/pages.term_vec_len, rank FROM index JOIN pages ON pages.id = index.page_id WHERE term = (%s);', (term,))
             self.cache[term] = c.fetchall()
 
-        return list(map(lambda result: result[0], self.cache[term]))
+        return list(map(lambda result: (result[0], float(result[2])), self.cache[term]))
 
     def fillQueryResult(self, searchResults):
         c = self.dbconn.cursor()
